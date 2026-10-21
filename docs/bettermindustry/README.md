@@ -13,6 +13,7 @@
 | [变更记录](changelog.md) | BetterMindustry 自己的里程碑变化 |
 | [双世界手工实验](spikes/0001-two-worker-manual.md) | 两个隔离 Worker 的启动、隔离和恢复证据 |
 | [Web 调试器](tools/debugger.md) | 本地双 Worker 状态、日志、启停和命令控制 |
+| [开发日志](devlog/2026-10-22.md) | 2026-10-22 的工作、验证和下次恢复入口 |
 | [ADR-0001](decisions/0001-world-isolation.md) | 为什么第一阶段用独立进程承载每个世界 |
 | [ADR-0002](decisions/0002-multi-world-client.md) | 多视口客户端为什么先采用顺序场景绑定 |
 | [ADR-0003](decisions/0003-snapshot-fork.md) | 为什么在线仓库从 v160.7 源码快照独立起史 |
