@@ -1,11 +1,25 @@
-# Orchestrator
+# Orchestrator Debugger
 
-负责世界目录、端口与资源分配、子进程启停、健康状态、恢复和审计。它不直接推进地图 Tick，也不允许客户端绕过世界权威直接修改库存。
+负责启动两个隔离的 Mindustry Server Worker，并提供一个只监听本机的简单 Web 调试器。
 
-M1 的最小职责：
+启动：
 
-- 根据世界清单启动两个服务端进程。
-- 为每个世界分配唯一端口和运行目录。
-- 捕获标准输出与错误日志。
-- 请求优雅停止并等待退出。
-- 报告进程退出码和失败原因。
+```powershell
+.\gradlew.bat -p bettermindustry/orchestrator run
+```
+
+浏览器打开：
+
+```text
+http://127.0.0.1:19090/
+```
+
+当前功能：
+
+- 显示两个 Worker 的状态、地图、端口、PID、运行时长和日志。
+- 分别启动、停止和保存两个 Worker。
+- 向 Worker 标准输入发送任意服务端命令。
+- 启动时自动启动 `sector-a` 和 `sector-b`。
+- 运行目录位于 `bettermindustry/runtime/debugger/`，不会进入 Git。
+
+当前调试器只观察 Game Tick。独立 Render Tick 进程、场景订阅和画面合成属于下一阶段。
