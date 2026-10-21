@@ -2,7 +2,7 @@
 
 - 最后更新：2026-10-22
 - 当前分支：`main`
-- 当前阶段：工程准备完成，准备进入 M1
+- 当前阶段：M1A 第 1 步双世界手工实验已通过
 - 当前里程碑：M0 上游基线已完成
 
 ## 已完成
@@ -30,10 +30,12 @@
 M1：精确 Sector Actor 原型。
 
 1. 定义 `SectorId`、Sector 状态机和最小宇宙清单。
-2. 控制层启动两个独立 Server Worker。
+2. 实现最小 Orchestrator CLI，自动启动两个独立 Server Worker。
 3. 为每个 Worker 分配端口、配置、存档、日志和游戏时钟。
-4. 验证无玩家时两个世界继续完整 Tick。
+4. 增加可靠的进程、端口和日志健康检查。
 5. 验证优雅停止、检查点保存和恢复。
+
+双世界手工实验记录见 `docs/bettermindustry/spikes/0001-two-worker-manual.md`。
 
 ## 未决问题
 

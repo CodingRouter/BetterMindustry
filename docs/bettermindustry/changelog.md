@@ -9,10 +9,11 @@
 - 多世界持续模拟与多视口客户端总体架构。
 - Sector 完整精确模拟原则。
 - `Universe / Solar System / Planet / Sector` 领域层级。
+- 两个隔离 Server Worker 的手工验证记录。
 
 ### Next
 
-- M1：双 Sector Worker 精确运行原型。
+- M1：自动管理双 Sector Worker 的 Orchestrator CLI。
 
 ## M0 - 2026-10-22
 
