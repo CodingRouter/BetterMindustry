@@ -89,6 +89,32 @@ flowchart TB
 - 静态地形缓存
 - 网络订阅和包队列
 
+## Game Tick 与 Render Tick
+
+长期架构必须把权威游戏更新和画面更新分开：
+
+```text
+Game Tick Process (authoritative)
+  固定 Tick
+  资源、单位、建筑、电力、波次、逻辑
+  输出 tick snapshot / delta
+          |
+          v
+Render Tick Process (non-authoritative)
+  可变帧率
+  插值、相机、粒子、光照、UI
+  不修改库存、位置、战斗结果
+```
+
+Game Tick 与 Render Tick 的时钟不同：
+
+- Game Tick 使用固定模拟步长，允许加速追赶，但禁止跳过状态提交。
+- Render Tick 使用现实帧率，只负责插值和表现。
+- Render Tick 卡顿不能回写或暂停 Game Tick。
+- Game Tick 的结果必须通过带 `sectorId` 和 `tick` 的快照/增量传给渲染侧。
+
+第一阶段调试器只观察 Game Tick Worker；Render Tick 独立进程和场景订阅尚未实现。
+
 ## 模拟原则
 
 ### 玩家不是模拟开关
@@ -251,6 +277,7 @@ universe-7/solar-system-1/serpulo/sector-170
 - 跨 Sector 消息只允许在 Tick 边界提交。
 - 线程分配由 Actor 调度器决定，不在每个 Tick 随机决定。
 - 生产、战斗和物流测试必须验证相同种子、相同命令和相同 Tick 数得到相同结果。
+- 渲染帧率与模拟 Tick 解耦，但渲染侧的插值和预测不得成为权威状态。
 
 ## 视觉增强
 

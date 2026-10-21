@@ -10,6 +10,8 @@
 - Sector 完整精确模拟原则。
 - `Universe / Solar System / Planet / Sector` 领域层级。
 - 两个隔离 Server Worker 的手工验证记录。
+- 本地 Web Worker 调试器和启停/保存/命令 API。
+- Game Tick 与 Render Tick 分离的架构决策。
 
 ### Next
 

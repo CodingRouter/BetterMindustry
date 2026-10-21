@@ -1,0 +1,167 @@
+package io.bettermindustry.orchestrator;
+
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpServer;
+
+import java.io.IOException;
+import java.io.OutputStream;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+import java.util.Collection;
+import java.util.concurrent.Executors;
+
+public class DashboardServer {
+    private final WorkerManager manager;
+    private final int port;
+    private HttpServer server;
+
+    public DashboardServer(WorkerManager manager, int port) {
+        this.manager = manager;
+        this.port = port;
+    }
+
+    public void start() throws IOException {
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", port), 0);
+        server.createContext("/", this::root);
+        server.createContext("/api/overview", this::overview);
+        server.createContext("/api/start-all", exchange -> action(exchange, () -> manager.startAll()));
+        server.createContext("/api/stop-all", exchange -> action(exchange, () -> manager.stopAll()));
+        server.createContext("/api/worker/", this::workerAction);
+        server.setExecutor(Executors.newCachedThreadPool(r -> {
+            Thread thread = new Thread(r, "bettermindustry-dashboard");
+            thread.setDaemon(true);
+            return thread;
+        }));
+        server.start();
+    }
+
+    public void stop() {
+        if (server != null) server.stop(0);
+    }
+
+    private void root(HttpExchange exchange) throws IOException {
+        if (!"/".equals(exchange.getRequestURI().getPath())) {
+            send(exchange, 404, "Not found", "text/plain; charset=utf-8");
+            return;
+        }
+        send(exchange, 200, DashboardPage.html(), "text/html; charset=utf-8");
+    }
+
+    private void overview(HttpExchange exchange) throws IOException {
+        if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+            send(exchange, 405, "Method not allowed", "text/plain; charset=utf-8");
+            return;
+        }
+        StringBuilder json = new StringBuilder();
+        json.append('{');
+        json.append("\"service\":\"bettermindustry-debugger\",");
+        json.append("\"projectRoot\":\"").append(escape(manager.projectRoot().toString())).append("\",");
+        json.append("\"serverJar\":\"").append(escape(manager.serverJar().toString())).append("\",");
+        json.append("\"pipeline\":{");
+        json.append("\"gameTick\":\"server-worker processes\",");
+        json.append("\"renderTick\":\"planned separate process\",");
+        json.append("\"transport\":\"not implemented\"},");
+        json.append("\"workers\":[");
+        Collection<ManagedWorker> workers = manager.workers();
+        int index = 0;
+        for (ManagedWorker worker : workers) {
+            if (index++ > 0) json.append(',');
+            appendSnapshot(json, worker.snapshot());
+        }
+        json.append("]}");
+        send(exchange, 200, json.toString(), "application/json; charset=utf-8");
+    }
+
+    private void workerAction(HttpExchange exchange) throws IOException {
+        String[] parts = exchange.getRequestURI().getPath().split("/");
+        if (parts.length < 5) {
+            send(exchange, 404, "Worker action not found", "text/plain; charset=utf-8");
+            return;
+        }
+        ManagedWorker worker = manager.find(parts[3]);
+        if (worker == null) {
+            send(exchange, 404, "Worker not found", "text/plain; charset=utf-8");
+            return;
+        }
+
+        String action = parts[4];
+        String result;
+        switch (action) {
+            case "start" -> result = worker.start();
+            case "stop" -> result = worker.requestStop();
+            case "save" -> result = worker.saveCheckpoint();
+            case "command" -> {
+                if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+                    send(exchange, 405, "Method not allowed", "text/plain; charset=utf-8");
+                    return;
+                }
+                result = worker.sendCommand(readBody(exchange));
+            }
+            default -> {
+                send(exchange, 404, "Unknown action", "text/plain; charset=utf-8");
+                return;
+            }
+        }
+        send(exchange, 200, "{\"ok\":true,\"message\":\"" + escape(result) + "\"}",
+            "application/json; charset=utf-8");
+    }
+
+    private void action(HttpExchange exchange, Action action) throws IOException {
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            send(exchange, 405, "Method not allowed", "text/plain; charset=utf-8");
+            return;
+        }
+        action.run();
+        send(exchange, 200, "{\"ok\":true}", "application/json; charset=utf-8");
+    }
+
+    private static void appendSnapshot(StringBuilder json, ManagedWorker.Snapshot snapshot) {
+        json.append('{');
+        json.append("\"id\":\"").append(escape(snapshot.id())).append("\",");
+        json.append("\"map\":\"").append(escape(snapshot.map())).append("\",");
+        json.append("\"port\":").append(snapshot.port()).append(',');
+        json.append("\"runtimeDir\":\"").append(escape(snapshot.runtimeDir())).append("\",");
+        json.append("\"state\":\"").append(escape(snapshot.state())).append("\",");
+        json.append("\"alive\":").append(snapshot.alive()).append(',');
+        json.append("\"pid\":").append(snapshot.pid() == null ? "null" : snapshot.pid()).append(',');
+        json.append("\"uptimeSeconds\":").append(snapshot.uptimeSeconds()).append(',');
+        json.append("\"exitCode\":").append(snapshot.exitCode() == null ? "null" : snapshot.exitCode()).append(',');
+        json.append("\"checkpoint\":").append(snapshot.checkpoint()).append(',');
+        json.append("\"logs\":[");
+        for (int i = 0; i < snapshot.logs().size(); i++) {
+            if (i > 0) json.append(',');
+            json.append('"').append(escape(snapshot.logs().get(i))).append('"');
+        }
+        json.append("]}");
+    }
+
+    private static String readBody(HttpExchange exchange) throws IOException {
+        return new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8).trim();
+    }
+
+    private static void send(HttpExchange exchange, int status, String body, String contentType) throws IOException {
+        byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set("Content-Type", contentType);
+        exchange.getResponseHeaders().set("Cache-Control", "no-store");
+        exchange.sendResponseHeaders(status, bytes.length);
+        try (OutputStream out = exchange.getResponseBody()) {
+            out.write(bytes);
+        } finally {
+            exchange.close();
+        }
+    }
+
+    private static String escape(String value) {
+        if (value == null) return "";
+        return value.replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+            .replace("\r", "\\r")
+            .replace("\n", "\\n")
+            .replace("\t", "\\t");
+    }
+
+    @FunctionalInterface
+    private interface Action {
+        void run();
+    }
+}
