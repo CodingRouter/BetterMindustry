@@ -1,0 +1,39 @@
+package mindustry.logic;
+
+public enum LogicRule{
+    currentWaveTime,
+    waveTimer,
+    waves,
+    wave,
+    waveSpacing,
+    waveSending,
+    attackMode,
+    enemyCoreBuildRadius,
+    dropZoneRadius,
+    unitCap,
+    mapArea,
+    lighting,
+    canGameOver,
+    ambientLight,
+    unitLight,
+    solarMultiplier,
+    dragMultiplier,
+    ban,
+    unban,
+    pauseDisabled,
+    musicVolume,
+
+    //team specific
+    buildSpeed,
+    unitHealth,
+    unitBuildSpeed,
+    unitMineSpeed,
+    unitCost,
+    unitDamage,
+    blockHealth,
+    blockDamage,
+    rtsMinWeight,
+    rtsMinSquad;
+
+    public static final LogicRule[] all = values();
+}

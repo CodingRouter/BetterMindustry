@@ -1,0 +1,514 @@
+package mindustry.input;
+
+import arc.*;
+import arc.func.*;
+import arc.math.*;
+import arc.math.geom.*;
+import arc.struct.*;
+import arc.util.pooling.*;
+import mindustry.entities.units.*;
+import mindustry.world.*;
+import mindustry.world.blocks.distribution.*;
+
+import java.util.*;
+
+import static mindustry.Vars.*;
+
+interface BridgePlacer{
+    boolean unlockedNow();
+
+    boolean positionsValid(int x1, int y1, int x2, int y2);
+
+    void applyToPlans(BuildPlan cur, BuildPlan other);
+}
+
+class ItemBridgePlacer implements BridgePlacer{
+    private final ItemBridge bridge;
+
+    ItemBridgePlacer(ItemBridge bridge){
+        this.bridge = bridge;
+    }
+
+    @Override
+    public boolean unlockedNow(){
+        return bridge.unlockedNow();
+    }
+
+    @Override
+    public boolean positionsValid(int x1, int y1, int x2, int y2){
+        return bridge.positionsValid(x1, y1, x2, y2);
+    }
+
+    @Override
+    public void applyToPlans(BuildPlan cur, BuildPlan other){
+        cur.block = bridge;
+        other.block = bridge;
+        other.config = new Point2(cur.x - other.x, cur.y - other.y);
+    }
+}
+
+class DirectionBridgePlacer implements BridgePlacer{
+    private final DirectionBridge bridge;
+
+    DirectionBridgePlacer(DirectionBridge bridge){
+        this.bridge = bridge;
+    }
+
+    @Override
+    public boolean unlockedNow(){
+        return bridge.unlockedNow();
+    }
+
+    @Override
+    public boolean positionsValid(int x1, int y1, int x2, int y2){
+        return bridge.positionsValid(x1, y1, x2, y2);
+    }
+
+    @Override
+    public void applyToPlans(BuildPlan cur, BuildPlan other){
+        cur.block = bridge;
+        other.block = bridge;
+    }
+}
+
+public class Placement{
+    private static final Seq<BuildPlan> plans1 = new Seq<>();
+    private static final Seq<Point2> tmpPoints = new Seq<>(), tmpPoints2 = new Seq<>();
+    private static final NormalizeResult result = new NormalizeResult();
+    private static final NormalizeDrawResult drawResult = new NormalizeDrawResult();
+    private static final Bresenham2 bres = new Bresenham2();
+    private static final Seq<Point2> points = new Seq<>();
+    private static final IntSeq tmpInts = new IntSeq(), tmpInts2 = new IntSeq();
+
+    //for pathfinding
+    private static final IntFloatMap costs = new IntFloatMap();
+    private static final IntIntMap parents = new IntIntMap();
+    private static final IntSet closed = new IntSet();
+
+    /** Normalize a diagonal line into points. */
+    public static Seq<Point2> pathfindLine(boolean conveyors, int startX, int startY, int endX, int endY){
+        Pools.freeAll(points);
+        points.clear();
+        if(conveyors && Core.settings.getBool("conveyorpathfinding")){
+            if(astar(startX, startY, endX, endY)){
+                return points;
+            }else{
+                return normalizeLine(startX, startY, endX, endY);
+            }
+        }else{
+            return bres.lineNoDiagonal(startX, startY, endX, endY, Pools.get(Point2.class, Point2::new), points);
+        }
+    }
+
+    /** Normalize two points into one straight line, no diagonals. */
+    public static Seq<Point2> normalizeLine(int startX, int startY, int endX, int endY){
+        Pools.freeAll(points);
+        points.clear();
+        if(Math.abs(startX - endX) > Math.abs(startY - endY)){
+            //go width
+            for(int i = 0; i <= Math.abs(startX - endX); i++){
+                points.add(Pools.obtain(Point2.class, Point2::new).set(startX + i * Mathf.sign(endX - startX), startY));
+            }
+        }else{
+            //go height
+            for(int i = 0; i <= Math.abs(startY - endY); i++){
+                points.add(Pools.obtain(Point2.class, Point2::new).set(startX, startY + i * Mathf.sign(endY - startY)));
+            }
+        }
+        return points;
+    }
+
+    /** Normalize two points into a rectangle. */
+    public static Seq<Point2> normalizeRectangle(int startX, int startY, int endX, int endY, int blockSize){
+        Pools.freeAll(points);
+        points.clear();
+
+        int minX = Math.min(startX, endX), minY = Math.min(startY, endY), maxX = Math.max(startX, endX), maxY = Math.max(startY, endY);
+
+        for(int y = 0; y <= maxY - minY; y += blockSize){
+            for(int x = 0; x <= maxX - minX; x += blockSize){
+                points.add(Pools.obtain(Point2.class, Point2::new).set(startX + x * Mathf.sign(endX - startX), startY + y * Mathf.sign(endY - startY)));
+            }
+        }
+
+        return points;
+    }
+
+    public static Seq<Point2> upgradeLine(int startX, int startY, int endX, int endY){
+        closed.clear();
+        Pools.freeAll(points);
+        points.clear();
+        var build = world.build(startX, startY);
+        points.add(Pools.obtain(Point2.class, Point2::new).set(startX, startY));
+        while(build instanceof ChainedBuilding chain && (build.tile.x != endX || build.tile.y != endY) && closed.add(build.id)){
+            if(chain.next() == null) return pathfindLine(true, startX, startY, endX, endY);
+            build = chain.next();
+            points.add(Pools.obtain(Point2.class, Point2::new).set(build.tile.x, build.tile.y));
+        }
+        return points;
+    }
+
+    /** Calculates optimal node placement for nodes with spacing. Used for bridges and power nodes. */
+    public static void calculateNodes(Seq<Point2> points, Block block, int rotation, Boolf2<Point2, Point2> overlapper){
+        var base = tmpPoints2;
+        var result = tmpPoints.clear();
+
+        base.selectFrom(points, p -> p == points.first() || p == points.peek() || Build.validPlace(block, player.team(), p.x, p.y, rotation));
+        boolean addedLast = false;
+
+        outer:
+        for(int i = 0; i < base.size; ){
+            var point = base.get(i);
+            result.add(point);
+            if(i == base.size - 1) addedLast = true;
+
+            //find the furthest node that overlaps this one
+            for(int j = base.size - 1; j > i; j--){
+                var other = base.get(j);
+                boolean over = overlapper.get(point, other);
+
+                if(over){
+                    //add node to list and start searching for node that overlaps the next one
+                    i = j;
+                    continue outer;
+                }
+            }
+
+            //if it got here, that means nothing was found. try to proceed to the next node anyway
+            i++;
+        }
+
+        if(!addedLast && !base.isEmpty()) result.add(base.peek());
+
+        points.clear();
+        points.addAll(result);
+    }
+
+    public static boolean isSidePlace(Seq<BuildPlan> plans){
+        return plans.size > 1 && Mathf.mod(Tile.relativeTo(plans.first().x, plans.first().y, plans.get(1).x, plans.get(1).y) - plans.first().rotation, 2) == 1;
+    }
+
+    public static void calculateBridges(Seq<BuildPlan> plans, ItemBridge bridge){
+        calculateBridges(plans, bridge, false, t -> false);
+    }
+
+    private static void calculateBridges(Seq<BuildPlan> plans, BridgePlacer bridge, boolean hasJunction, Boolf<Block> avoid){
+        //common checks
+        if(isSidePlace(plans) || plans.size == 0) return;
+
+        //check for orthogonal placement + unlocked state
+        if(!(plans.first().x == plans.peek().x || plans.first().y == plans.peek().y) || !bridge.unlockedNow()){
+            return;
+        }
+
+        smartCalculateBridges(plans, bridge, hasJunction, avoid);
+    }
+
+    private static void smartCalculateBridges(Seq<BuildPlan> plans, BridgePlacer bridge, boolean hasJunction, Boolf<Block> avoid){
+        Boolf<BuildPlan> placeable = plan ->
+        (plan.placeable(player.team()) || (plan.tile() != null && plan.tile().block() == plan.block)) &&  //don't count the same block as inaccessible
+        !(plan != plans.first() && plan.build() != null && plan.build().rotation != plan.rotation && avoid.get(plan.tile().block()));
+
+        var result = plans1.clear();
+
+        // Use DP for smarter bridge placement
+        final int conveyorCost = 3;
+        final int junctionCost = 30;
+        final int bridgeCost = 200;
+        final int bridgeOverEmptyPenalty = 5;
+        final int infCost = Integer.MAX_VALUE / 2; // Avoid overflow when adding
+
+        int N = plans.size;
+        var dp = tmpInts.setSize(2 * N);
+        var parent = tmpInts2.setSize(2 * N);
+        Arrays.fill(dp, 0, 2 * N, infCost);
+        Arrays.fill(parent, 0, 2 * N, -1);
+        dp[0] = 0;
+        dp[N] = bridgeCost;
+
+        for(int i = 1; i < N; i++){
+            var cur = plans.get(i);
+            boolean canPlace = placeable.get(cur);
+            boolean needJunction = hasJunction && (cur.tile() == null || avoid.get(cur.tile().block()));
+
+            if(!canPlace && !needJunction){
+                continue;
+            }
+
+            if(canPlace){
+                dp[i] = dp[i - 1] + conveyorCost;
+            }else{
+                dp[i] = dp[i - 1] + junctionCost;
+            }
+            parent[i] = i - 1;
+
+            if(dp[i] < infCost && canPlace){
+                dp[N + i] = dp[i] + bridgeCost;
+                parent[N + i] = i - 1;
+            }
+
+            // Consider bridges from all previous positions
+            if(i >= 2 && canPlace){
+                int emptyPenalty = 0;
+                if(placeable.get(plans.get(i - 1))){
+                    emptyPenalty += bridgeOverEmptyPenalty;
+                }
+
+                for(int j = i - 2; j >= 0; j--){
+                    var other = plans.get(j);
+                    if(!bridge.positionsValid(cur.x, cur.y, other.x, other.y)){
+                        break; // No need to check further back if this one is out of range
+                    }
+
+                    if(placeable.get(other)){
+                        int cost = dp[N + j] + bridgeCost + emptyPenalty;
+                        if(dp[N + i] > cost){
+                            dp[N + i] = cost;
+                            parent[N + i] = j;
+                        }
+                        emptyPenalty += bridgeOverEmptyPenalty;
+                    }
+                }
+            }
+
+            if(dp[N + i] < dp[i]){
+                dp[i] = dp[N + i];
+                parent[i] = parent[N + i];
+            }
+
+            if(canPlace && dp[i] >= infCost){
+                // Unable to connect, restart a new segment
+                dp[i] = 0;
+                dp[N + i] = bridgeCost;
+            }
+        }
+
+        // Backtrack to assign bridges
+        int bridgeMode = 0;
+        for(int i = N - 1; i >= 0; ){
+            var cur = plans.get(i);
+            int p = parent[bridgeMode + i];
+
+            if(p == -1 || p == i - 1){
+                // No connection, connected by conveyor, or junction, no bridge needed
+                result.add(cur);
+                bridgeMode = 0;
+                i--;
+            }else{
+                // Connected by bridge, assign it
+                var other = plans.get(p);
+                bridge.applyToPlans(cur, other);
+                result.add(cur);
+                i = p;
+                bridgeMode = N;
+            }
+        }
+
+        result.reverse();
+        plans.set(result);
+    }
+
+    public static void calculateBridges(Seq<BuildPlan> plans, ItemBridge bridge, boolean hasJunction, Boolf<Block> avoid){
+        calculateBridges(plans, new ItemBridgePlacer(bridge), hasJunction, avoid);
+    }
+
+    public static void calculateBridges(Seq<BuildPlan> plans, DirectionBridge bridge, boolean hasJunction, Boolf<Block> avoid){
+        calculateBridges(plans, new DirectionBridgePlacer(bridge), hasJunction, avoid);
+    }
+
+    private static float tileHeuristic(Tile tile, Tile other){
+        Block block = control.input.block;
+
+        if((!other.block().alwaysReplace && !(block != null && block.canReplace(other.block()))) || other.floor().isDeep()){
+            return 20;
+        }else{
+            if(parents.containsKey(tile.pos())){
+                Tile prev = world.tile(parents.get(tile.pos(), 0));
+                if(tile.relativeTo(prev) != other.relativeTo(tile)){
+                    return 8;
+                }
+            }
+        }
+        return 1;
+    }
+
+    private static float distanceHeuristic(int x1, int y1, int x2, int y2){
+        return Math.abs(x1 - x2) + Math.abs(y1 - y2);
+    }
+
+    private static boolean validNode(Tile tile, Tile other){
+        Block block = control.input.block;
+        if(block != null && block.canReplace(other.block())){
+            return true;
+        }else{
+            return other.block().alwaysReplace;
+        }
+    }
+
+    private static boolean astar(int startX, int startY, int endX, int endY){
+        Tile start = world.tile(startX, startY);
+        Tile end = world.tile(endX, endY);
+        if(start == end || start == null || end == null) return false;
+
+        costs.clear();
+        closed.clear();
+        parents.clear();
+
+        int nodeLimit = 1000;
+        int totalNodes = 0;
+
+        PQueue<Tile> queue = new PQueue<>(10, (a, b) -> Float.compare(costs.get(a.pos(), 0f) + distanceHeuristic(a.x, a.y, end.x, end.y), costs.get(b.pos(), 0f) + distanceHeuristic(b.x, b.y, end.x, end.y)));
+        queue.add(start);
+        boolean found = false;
+        while(!queue.empty() && totalNodes++ < nodeLimit){
+            Tile next = queue.poll();
+            float baseCost = costs.get(next.pos(), 0f);
+            if(next == end){
+                found = true;
+                break;
+            }
+            closed.add(Point2.pack(next.x, next.y));
+            for(Point2 point : Geometry.d4){
+                int newx = next.x + point.x, newy = next.y + point.y;
+                Tile child = world.tile(newx, newy);
+                if(child != null && validNode(next, child)){
+                    if(closed.add(child.pos())){
+                        parents.put(child.pos(), next.pos());
+                        costs.put(child.pos(), tileHeuristic(next, child) + baseCost);
+                        queue.add(child);
+                    }
+                }
+            }
+        }
+
+        if(!found) return false;
+        int total = 0;
+
+        points.add(Pools.obtain(Point2.class, Point2::new).set(endX, endY));
+
+        Tile current = end;
+        while(current != start && total++ < nodeLimit){
+            if(current == null) return false;
+            int newPos = parents.get(current.pos(), -1);
+
+            if(newPos == -1) return false;
+
+            points.add(Pools.obtain(Point2.class, Point2::new).set(Point2.x(newPos), Point2.y(newPos)));
+            current = world.tile(newPos);
+        }
+
+        points.reverse();
+
+        return true;
+    }
+
+    /**
+     * Normalizes a placement area and returns the result, ready to be used for drawing a rectangle.
+     * Returned x2 and y2 will <i>always</i> be greater than x and y.
+     * @param block block that will be drawn
+     * @param startx starting X coordinate
+     * @param starty starting Y coordinate
+     * @param endx ending X coordinate
+     * @param endy ending Y coordinate
+     * @param snap whether to snap to a line
+     * @param maxLength maximum length of area
+     */
+    public static NormalizeDrawResult normalizeDrawArea(Block block, int startx, int starty, int endx, int endy, boolean snap, int maxLength, float scaling){
+        normalizeArea(startx, starty, endx, endy, 0, snap, maxLength);
+
+        float offset = block.offset;
+
+        drawResult.x = result.x * tilesize;
+        drawResult.y = result.y * tilesize;
+        drawResult.x2 = result.x2 * tilesize;
+        drawResult.y2 = result.y2 * tilesize;
+
+        drawResult.x -= block.size * scaling * tilesize / 2;
+        drawResult.x2 += block.size * scaling * tilesize / 2;
+
+
+        drawResult.y -= block.size * scaling * tilesize / 2;
+        drawResult.y2 += block.size * scaling * tilesize / 2;
+
+        drawResult.x += offset;
+        drawResult.y += offset;
+        drawResult.x2 += offset;
+        drawResult.y2 += offset;
+
+        return drawResult;
+    }
+
+    /**
+     * Normalizes a placement area and returns the result.
+     * Returned x2 and y2 will <i>always</i> be greater than x and y.
+     * @param tilex starting X coordinate
+     * @param tiley starting Y coordinate
+     * @param endx ending X coordinate
+     * @param endy ending Y coordinate
+     * @param snap whether to snap to a line
+     * @param rotation placement rotation
+     * @param maxLength maximum length of area
+     */
+    public static NormalizeResult normalizeArea(int tilex, int tiley, int endx, int endy, int rotation, boolean snap, int maxLength){
+        if(snap){
+            if(Math.abs(tilex - endx) > Math.abs(tiley - endy)){
+                endy = tiley;
+            }else{
+                endx = tilex;
+            }
+        }
+
+        if(maxLength > 0){
+            if(Math.abs(endx - tilex) > maxLength){
+                endx = Mathf.sign(endx - tilex) * maxLength + tilex;
+            }
+
+            if(Math.abs(endy - tiley) > maxLength){
+                endy = Mathf.sign(endy - tiley) * maxLength + tiley;
+            }
+        }
+
+        int dx = endx - tilex, dy = endy - tiley;
+
+        if(Math.abs(dx) > Math.abs(dy)){
+            if(dx >= 0){
+                rotation = 0;
+            }else{
+                rotation = 2;
+            }
+        }else if(Math.abs(dx) < Math.abs(dy)){
+            if(dy >= 0){
+                rotation = 1;
+            }else{
+                rotation = 3;
+            }
+        }
+
+        if(endx < tilex){
+            int t = endx;
+            endx = tilex;
+            tilex = t;
+        }
+        if(endy < tiley){
+            int t = endy;
+            endy = tiley;
+            tiley = t;
+        }
+
+        result.x2 = endx;
+        result.y2 = endy;
+        result.x = tilex;
+        result.y = tiley;
+        result.rotation = rotation;
+
+        return result;
+    }
+
+    public static class NormalizeDrawResult{
+        public float x, y, x2, y2;
+    }
+
+    public static class NormalizeResult{
+        public int x, y, x2, y2, rotation;
+    }
+}
