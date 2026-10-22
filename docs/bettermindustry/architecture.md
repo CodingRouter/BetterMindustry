@@ -113,7 +113,9 @@ Game Tick 与 Render Tick 的时钟不同：
 - Render Tick 卡顿不能回写或暂停 Game Tick。
 - Game Tick 的结果必须通过带 `sectorId` 和 `tick` 的快照/增量传给渲染侧。
 
-第一阶段调试器只观察 Game Tick Worker；Render Tick 独立进程和场景订阅尚未实现。
+当前调试器已经通过 SSE 提供 `bettermindustry.render.v1` 只读帧，浏览器使用自己的
+`requestAnimationFrame` 渲染循环。当前帧只包含 Tick 和实体统计，不包含完整地图几何；
+Render Tick 独立桌面进程和完整场景订阅仍在下一阶段。
 
 ## 模拟原则
 

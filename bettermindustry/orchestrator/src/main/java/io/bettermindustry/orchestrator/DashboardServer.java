@@ -2,6 +2,7 @@ package io.bettermindustry.orchestrator;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+import io.bettermindustry.protocol.RenderFrame;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -9,12 +10,16 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.List;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class DashboardServer {
     private final WorkerManager manager;
     private final int port;
+    private final AtomicLong renderSequence = new AtomicLong();
     private HttpServer server;
 
     public DashboardServer(WorkerManager manager, int port) {
@@ -26,6 +31,8 @@ public class DashboardServer {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", port), 0);
         server.createContext("/", this::root);
         server.createContext("/api/overview", this::overview);
+        server.createContext("/api/render/snapshot", this::renderSnapshot);
+        server.createContext("/api/render/stream", this::renderStream);
         server.createContext("/api/start-all", exchange -> action(exchange, () -> manager.startAll()));
         server.createContext("/api/stop-all", exchange -> action(exchange, () -> manager.stopAll()));
         server.createContext("/api/worker/", this::workerAction);
@@ -73,6 +80,81 @@ public class DashboardServer {
         }
         json.append("]}");
         send(exchange, 200, json.toString(), "application/json; charset=utf-8");
+    }
+
+    private void renderSnapshot(HttpExchange exchange) throws IOException {
+        if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+            send(exchange, 405, "Method not allowed", "text/plain; charset=utf-8");
+            return;
+        }
+        send(exchange, 200, createRenderFrame().toJson(), "application/json; charset=utf-8");
+    }
+
+    private void renderStream(HttpExchange exchange) {
+        if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+            try {
+                send(exchange, 405, "Method not allowed", "text/plain; charset=utf-8");
+            } catch (IOException ignored) {
+            }
+            return;
+        }
+
+        exchange.getResponseHeaders().set("Content-Type", "text/event-stream; charset=utf-8");
+        exchange.getResponseHeaders().set("Cache-Control", "no-store");
+        exchange.getResponseHeaders().set("Connection", "keep-alive");
+        try {
+            exchange.sendResponseHeaders(200, 0);
+            try (OutputStream out = exchange.getResponseBody()) {
+                while (!Thread.currentThread().isInterrupted()) {
+                    RenderFrame frame = createRenderFrame();
+                    String event = "event: render\nid: " + frame.sequence()
+                        + "\ndata: " + frame.toJson() + "\n\n";
+                    out.write(event.getBytes(StandardCharsets.UTF_8));
+                    out.flush();
+                    Thread.sleep(50);
+                }
+            }
+        } catch (IOException ignored) {
+            // Client disconnected or the debugger is shutting down.
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } finally {
+            exchange.close();
+        }
+    }
+
+    private RenderFrame createRenderFrame() {
+        List<RenderFrame.SectorFrame> sectors = new ArrayList<>();
+        for (ManagedWorker worker : manager.workers()) {
+            ManagedWorker.Snapshot snapshot = worker.snapshot();
+            ManagedWorker.Diagnostics diagnostics = snapshot.diagnostics();
+            long age = diagnostics == null ? -1
+                : Duration.between(diagnostics.receivedAt(), Instant.now()).toMillis();
+            sectors.add(new RenderFrame.SectorFrame(
+                snapshot.id(),
+                diagnostics == null ? snapshot.map() : diagnostics.map(),
+                snapshot.port(),
+                snapshot.state(),
+                snapshot.alive(),
+                snapshot.portOpen(),
+                diagnostics == null ? 0 : diagnostics.tick(),
+                diagnostics == null ? 0 : diagnostics.gameTimeSeconds(),
+                diagnostics == null ? 0 : diagnostics.updateId(),
+                diagnostics == null ? 0 : diagnostics.wave(),
+                diagnostics != null && diagnostics.paused(),
+                diagnostics == null ? 0 : diagnostics.players(),
+                diagnostics == null ? 0 : diagnostics.units(),
+                diagnostics == null ? 0 : diagnostics.enemies(),
+                diagnostics == null ? 0 : diagnostics.buildings(),
+                age
+            ));
+        }
+        return new RenderFrame(
+            RenderFrame.VERSION,
+            renderSequence.incrementAndGet(),
+            System.currentTimeMillis(),
+            sectors
+        );
     }
 
     private void workerAction(HttpExchange exchange) throws IOException {

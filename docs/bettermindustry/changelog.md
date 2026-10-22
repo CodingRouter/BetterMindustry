@@ -14,6 +14,7 @@
 - Game Tick 与 Render Tick 分离的架构决策。
 - 配置驱动 Worker 清单和真实 TCP 端口探测。
 - `bmstatus` 结构化 Game Tick 诊断和面板指标。
+- `bettermindustry.render.v1` 单帧和 SSE Render Tick 快照流。
 
 ### Next
 

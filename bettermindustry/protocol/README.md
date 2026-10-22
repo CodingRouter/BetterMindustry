@@ -1,13 +1,18 @@
 # Protocol
 
-定义控制层、世界进程和 BetterMindustry 客户端之间的版本化消息。协议尚未进入实现阶段。
+定义控制层、世界进程、渲染进程和未来 BetterMindustry 客户端之间的版本化消息。
 
-首版至少需要：
+当前已实现：
 
-- 协议版本和构建版本。
-- 能力协商。
-- 世界标识与世界摘要。
-- 健康与生命周期事件。
-- 带幂等 ID 的跨世界事件信封。
+- `bettermindustry.render.v1` 只读 Render Frame。
+- Game Tick、游戏时间、更新计数、波次和实体统计。
+- `authoritative=false` 与 `worldDataAvailable=false` 的显式能力标记。
 
-原版 Mindustry 协议保持独立兼容路径，不把扩展能力混入无版本检查的原版消息。
+运行：
+
+```powershell
+.\gradlew.bat -p bettermindustry/protocol build
+```
+
+当前 Frame 由 Orchestrator 的 `/api/render/snapshot` 和
+`/api/render/stream` 提供。完整 Tile/实体增量、能力协商和跨世界事件尚未接入。

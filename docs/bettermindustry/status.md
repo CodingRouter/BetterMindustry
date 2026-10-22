@@ -17,6 +17,7 @@
 - 本地 Web 调试器可显示两个真实 Worker 的状态、日志和命令。
 - Worker 列表已改为配置驱动，并加入真实 TCP 端口探测。
 - Worker 已提供 `bmstatus` 结构化 Tick 诊断，调试器实时显示。
+- 已提供 `bettermindustry.render.v1` 单帧端点和 20 Hz SSE 快照流。
 
 ## 当前架构决定
 
@@ -33,13 +34,14 @@
 M1：精确 Sector Actor 原型。
 
 1. 定义 `SectorId`、Sector 状态机和最小宇宙清单。
-2. 设计 Render Tick 独立进程的只读快照订阅协议。
+2. 把完整 Tile/建筑/实体增量加入 Render Frame。
 3. 验证双 Worker 的 Tick 连续性、恢复和长期运行。
 4. 增加生产吞吐与瓶颈诊断。
 
 双世界手工实验记录见 `docs/bettermindustry/spikes/0001-two-worker-manual.md`。
 调试器说明见 `docs/bettermindustry/tools/debugger.md`。
 诊断协议见 `docs/bettermindustry/diagnostics.md`。
+Render 快照流见 `docs/bettermindustry/render-stream.md`。
 
 ## 未决问题
 

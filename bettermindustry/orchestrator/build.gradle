@@ -12,6 +12,10 @@ application {
     mainClass = 'io.bettermindustry.orchestrator.DebuggerMain'
 }
 
+dependencies {
+    implementation project(':protocol')
+}
+
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
 }

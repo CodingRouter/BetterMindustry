@@ -38,6 +38,7 @@ public class ManagedWorker {
     private volatile Instant stoppedAt;
     private volatile int exitCode = Integer.MIN_VALUE;
     private volatile boolean portOpen;
+    private volatile long lastPortProbeNanos;
     private volatile long lastDiagnosticRequestNanos;
     private volatile Diagnostics diagnostics;
     private BufferedWriter stdin;
@@ -68,6 +69,7 @@ public class ManagedWorker {
             exitCode = Integer.MIN_VALUE;
             stoppedAt = null;
             diagnostics = null;
+            lastPortProbeNanos = 0;
             lastDiagnosticRequestNanos = 0;
             state = State.STARTING;
             startedAt = Instant.now();
@@ -318,6 +320,9 @@ public class ManagedWorker {
     private boolean probePort() {
         Process current = process;
         if (current == null || !current.isAlive()) return false;
+        long now = System.nanoTime();
+        if (now - lastPortProbeNanos < 1_000_000_000L) return portOpen;
+        lastPortProbeNanos = now;
         try (Socket socket = new Socket()) {
             socket.connect(new InetSocketAddress("127.0.0.1", config.port()), 250);
             return true;

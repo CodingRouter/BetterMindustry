@@ -52,16 +52,20 @@ public final class DashboardPage {
     <div class="toolbar"><button class="primary" id="start-all">启动全部</button><button class="danger" id="stop-all">停止全部</button></div>
   </header>
   <section class="pipeline">
-    <span class="pipe-node">Game Tick<br><small>独立 World Worker</small></span>
+    <span class="pipe-node">Game Tick<br><small id="game-pipe-status">World Worker 运行中</small></span>
     <span class="pipe-arrow">→</span>
-    <span class="pipe-node">Render Tick<br><small>计划中的独立渲染进程</small></span>
-    <span class="pipe-note">调试器当前观察左侧游戏 Tick；渲染管线接口将在下一阶段接入。</span>
+    <span class="pipe-node">Render Tick<br><small id="render-pipe-status">正在连接快照流…</small></span>
+    <span class="pipe-note">浏览器是独立渲染进程：以自身帧率消费只读 Game Tick 快照，不回写权威世界。</span>
   </section>
   <main id="workers"></main>
   <div class="footer">本地控制面板 · 仅监听 127.0.0.1 · 命令和日志来自真实 Server Worker</div>
   <script>
     const cards = new Map();
     const workersRoot = document.getElementById('workers');
+    let renderFrames = 0;
+    let displayFrames = 0;
+    let latestRenderFrame = null;
+    let renderConnected = false;
     function set(card, name, value) { const el = card.querySelector('[data-field="' + name + '"]'); if (el) el.textContent = value ?? '-'; }
     function stateClass(state) { return state || 'STOPPED'; }
     function createCard(worker) {
@@ -161,6 +165,32 @@ public final class DashboardPage {
       const s = total % 60;
       return (h ? h + ':' : '') + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
     }
+    function animate() {
+      displayFrames++;
+      requestAnimationFrame(animate);
+    }
+    requestAnimationFrame(animate);
+    const renderStream = new EventSource('/api/render/stream');
+    renderStream.addEventListener('render', event => {
+      renderConnected = true;
+      renderFrames++;
+      latestRenderFrame = JSON.parse(event.data);
+    });
+    renderStream.onerror = () => {
+      renderConnected = false;
+    };
+    setInterval(() => {
+      const latestTick = latestRenderFrame && latestRenderFrame.sectors.length
+        ? Math.max(...latestRenderFrame.sectors.map(s => s.gameTick))
+        : 0;
+      document.getElementById('game-pipe-status').textContent = latestRenderFrame
+        ? '帧 #' + latestRenderFrame.sequence + ' · tick ' + Math.floor(latestTick)
+        : '等待 Game Tick';
+      document.getElementById('render-pipe-status').textContent = (renderConnected ? 'render ' + displayFrames + ' fps' : '快照流断开')
+        + ' · snapshots ' + renderFrames + '/s';
+      renderFrames = 0;
+      displayFrames = 0;
+    }, 1000);
     async function action(worker, name) {
       await fetch('/api/worker/' + worker + '/' + name, {method:'POST'});
       refresh();
