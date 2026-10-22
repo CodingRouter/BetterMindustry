@@ -2,7 +2,7 @@
 
 - 最后更新：2026-10-22
 - 当前分支：`spike/m1-worker-supervisor`
-- 当前阶段：M1A 双世界手工实验通过，Web 调试器已可用（已停止，等待下次启动）
+- 当前阶段：M1A 进程级验收通过，准备进入 M1B 多世界客户端
 - 当前里程碑：M1 进行中；M0 基线已完成
 
 ## 已完成
@@ -19,6 +19,7 @@
 - Worker 已提供 `bmstatus` 结构化 Tick 诊断，调试器实时显示。
 - 已提供 `bettermindustry.render.v1` 单帧端点和 20 Hz SSE 快照流。
 - Server Worker 已生成地图 PNG、单位和建筑 JSON，浏览器 Canvas 已能显示真实地图缩略图。
+- 两个 Worker 连续运行超过 10 分钟，故障隔离和控制层恢复通过。
 
 ## 当前架构决定
 
@@ -32,17 +33,18 @@
 
 ## 下一步
 
-M1：精确 Sector Actor 原型。
+M1B：多世界客户端与 Gateway。
 
-1. 定义 `SectorId`、Sector 状态机和最小宇宙清单。
-2. 在 Canvas 上绘制单位和建筑覆盖层，加入实体插值。
-3. 验证双 Worker 的 Tick 连续性、恢复和长期运行。
-4. 增加生产吞吐与瓶颈诊断。
+1. Gateway 按 `sectorId` 多路复用世界订阅。
+2. 建立客户端 `WorldView` 和 Focus Sector 控制权。
+3. 第一版支持两个独立视口，不要求无缝拼接。
+4. 继续完善单位/建筑覆盖层、实体插值和长期诊断。
 
 双世界手工实验记录见 `docs/bettermindustry/spikes/0001-two-worker-manual.md`。
 调试器说明见 `docs/bettermindustry/tools/debugger.md`。
 诊断协议见 `docs/bettermindustry/diagnostics.md`。
 Render 快照流见 `docs/bettermindustry/render-stream.md`。
+M1A 验收记录见 `docs/bettermindustry/devlog/2026-10-22-m1a-acceptance.md`。
 
 ## 未决问题
 
