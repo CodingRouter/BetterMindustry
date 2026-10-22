@@ -5,6 +5,8 @@ import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
+import java.net.InetSocketAddress;
+import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -33,6 +35,7 @@ public class ManagedWorker {
     private volatile Instant startedAt;
     private volatile Instant stoppedAt;
     private volatile int exitCode = Integer.MIN_VALUE;
+    private volatile boolean portOpen;
     private BufferedWriter stdin;
 
     public ManagedWorker(WorkerConfig config, Path serverJar) {
@@ -141,6 +144,11 @@ public class ManagedWorker {
             tail = new ArrayList<>(logs.subList(from, logs.size()));
         }
         Process current = process;
+        boolean listening = probePort();
+        if (listening && !portOpen) {
+            addLog("Port " + config.port() + " is listening");
+        }
+        portOpen = listening;
         return new Snapshot(
             config.id(),
             config.map(),
@@ -151,6 +159,7 @@ public class ManagedWorker {
             current == null ? null : current.pid(),
             startedAt == null ? 0 : Duration.between(startedAt, Instant.now()).toSeconds(),
             exitCode == Integer.MIN_VALUE ? null : exitCode,
+            listening,
             Files.isRegularFile(config.checkpoint()),
             tail
         );
@@ -199,9 +208,11 @@ public class ManagedWorker {
                 stoppedAt = Instant.now();
                 if (stopRequested) {
                     state = State.STOPPED;
+                    portOpen = false;
                     addLog("Worker stopped with exit code " + code);
                 } else {
                     state = State.FAILED;
+                    portOpen = false;
                     addLog("Worker exited unexpectedly with code " + code);
                 }
             }
@@ -214,6 +225,17 @@ public class ManagedWorker {
         synchronized (logs) {
             logs.add(line);
             while (logs.size() > MAX_LOG_LINES) logs.remove(0);
+        }
+    }
+
+    private boolean probePort() {
+        Process current = process;
+        if (current == null || !current.isAlive()) return false;
+        try (Socket socket = new Socket()) {
+            socket.connect(new InetSocketAddress("127.0.0.1", config.port()), 250);
+            return true;
+        } catch (IOException ignored) {
+            return false;
         }
     }
 
@@ -231,6 +253,7 @@ public class ManagedWorker {
         Long pid,
         long uptimeSeconds,
         Integer exitCode,
+        boolean portOpen,
         boolean checkpoint,
         List<String> logs
     ) {

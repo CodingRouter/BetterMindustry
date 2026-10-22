@@ -16,10 +16,41 @@ http://127.0.0.1:19090/
 
 调试器只监听 `127.0.0.1`，不会暴露到局域网。
 
+## Worker 配置
+
+测试 Worker 清单位于：
+
+```text
+bettermindustry/orchestrator/worlds.properties
+```
+
+格式：
+
+```properties
+workers=sector-a,sector-b
+
+sector-a.map=wasteland
+sector-a.port=16567
+sector-a.runtimeDir=bettermindustry/runtime/debugger/sector-a
+
+sector-b.map=veins
+sector-b.port=16568
+sector-b.runtimeDir=bettermindustry/runtime/debugger/sector-b
+```
+
+启动时会校验 Worker ID、端口、运行目录、必需字段和重复值。运行目录必须位于项目目录内。
+
+只验证配置：
+
+```powershell
+.\gradlew.bat -p bettermindustry/orchestrator run --args="--validate-config"
+```
+
 ## 显示内容
 
 - Worker ID、地图和端口。
 - 进程状态、PID、运行时长和退出码。
+- 实际 TCP 端口监听状态。
 - 独立检查点是否存在。
 - 服务端实时日志。
 - Game Tick 与计划中的 Render Tick 管线。
@@ -50,7 +81,7 @@ bettermindustry/runtime/debugger/
 ## 当前限制
 
 - 调试器只观察 Game Tick Worker，不渲染地图。
-- 端口健康检查尚未实现，当前以进程是否存活和日志为准。
-- Worker 固定写在 `WorkerManager` 中，下一步迁移为配置文件。
+- Worker 配置目前使用 Java Properties 格式，尚未加入热重载和面板内增删。
+- 端口探测只确认 TCP 可连接，尚未执行应用层握手。
 - 尚未提供 `state.tick`、生产吞吐和单位统计的结构化诊断。
 - 渲染进程、场景订阅和多视口尚未接入。

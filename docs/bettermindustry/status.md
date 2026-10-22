@@ -15,6 +15,7 @@
 - 服务端 JAR 已实际启动并正常退出。
 - 项目入口、路线图、总体架构、风险、ADR 和开发流程已建立。
 - 本地 Web 调试器可显示两个真实 Worker 的状态、日志和命令。
+- Worker 列表已改为配置驱动，并加入真实 TCP 端口探测。
 
 ## 当前架构决定
 
@@ -31,10 +32,9 @@
 M1：精确 Sector Actor 原型。
 
 1. 定义 `SectorId`、Sector 状态机和最小宇宙清单。
-2. 将调试器从固定两个 Worker 扩展为配置驱动的世界清单。
-3. 增加 TCP 端口探测和明确的进程退出原因。
-4. 增加游戏 Tick 诊断命令，显示 `state.tick`、波次和更新时间。
-5. 设计 Render Tick 独立进程的快照订阅协议。
+2. 增加游戏 Tick 诊断命令，显示 `state.tick`、波次和更新时间。
+3. 把诊断结果结构化显示在调试器 UI。
+4. 设计 Render Tick 独立进程的快照订阅协议。
 
 双世界手工实验记录见 `docs/bettermindustry/spikes/0001-two-worker-manual.md`。
 调试器说明见 `docs/bettermindustry/tools/debugger.md`。

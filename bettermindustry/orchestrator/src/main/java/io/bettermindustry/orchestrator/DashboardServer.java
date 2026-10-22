@@ -57,6 +57,7 @@ public class DashboardServer {
         json.append("\"service\":\"bettermindustry-debugger\",");
         json.append("\"projectRoot\":\"").append(escape(manager.projectRoot().toString())).append("\",");
         json.append("\"serverJar\":\"").append(escape(manager.serverJar().toString())).append("\",");
+        json.append("\"catalogFile\":\"").append(escape(manager.catalogFile().toString())).append("\",");
         json.append("\"pipeline\":{");
         json.append("\"gameTick\":\"server-worker processes\",");
         json.append("\"renderTick\":\"planned separate process\",");
@@ -126,6 +127,7 @@ public class DashboardServer {
         json.append("\"pid\":").append(snapshot.pid() == null ? "null" : snapshot.pid()).append(',');
         json.append("\"uptimeSeconds\":").append(snapshot.uptimeSeconds()).append(',');
         json.append("\"exitCode\":").append(snapshot.exitCode() == null ? "null" : snapshot.exitCode()).append(',');
+        json.append("\"portOpen\":").append(snapshot.portOpen()).append(',');
         json.append("\"checkpoint\":").append(snapshot.checkpoint()).append(',');
         json.append("\"logs\":[");
         for (int i = 0; i < snapshot.logs().size(); i++) {

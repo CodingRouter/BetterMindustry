@@ -57,39 +57,87 @@ public final class DashboardPage {
     <span class="pipe-node">Render Tick<br><small>计划中的独立渲染进程</small></span>
     <span class="pipe-note">调试器当前观察左侧游戏 Tick；渲染管线接口将在下一阶段接入。</span>
   </section>
-  <main id="workers">
-    <article class="worker" data-worker="sector-a">
-      <div class="worker-head"><div><div class="worker-title">sector-a</div><div class="subtitle">wasteland · :16567</div></div><span class="state" data-field="state">STOPPED</span></div>
-      <div class="meta"><span>进程 PID</span><strong data-field="pid">-</strong><span>运行时长</span><strong data-field="uptime">-</strong><span>退出码</span><strong data-field="exit">-</strong><span>检查点</span><strong data-field="checkpoint">-</strong><span>工作目录</span><strong data-field="runtime">-</strong></div>
-      <div class="controls"><button data-action="start">启动</button><button data-action="stop">停止</button><button data-action="save">保存检查点</button></div>
-      <div class="command"><input data-command placeholder="向 sector-a 发送服务端命令…"><button data-action="command">发送</button></div>
-      <pre class="logs" data-field="logs"></pre>
-    </article>
-    <article class="worker" data-worker="sector-b">
-      <div class="worker-head"><div><div class="worker-title">sector-b</div><div class="subtitle">veins · :16568</div></div><span class="state" data-field="state">STOPPED</span></div>
-      <div class="meta"><span>进程 PID</span><strong data-field="pid">-</strong><span>运行时长</span><strong data-field="uptime">-</strong><span>退出码</span><strong data-field="exit">-</strong><span>检查点</span><strong data-field="checkpoint">-</strong><span>工作目录</span><strong data-field="runtime">-</strong></div>
-      <div class="controls"><button data-action="start">启动</button><button data-action="stop">停止</button><button data-action="save">保存检查点</button></div>
-      <div class="command"><input data-command placeholder="向 sector-b 发送服务端命令…"><button data-action="command">发送</button></div>
-      <pre class="logs" data-field="logs"></pre>
-    </article>
-  </main>
+  <main id="workers"></main>
   <div class="footer">本地控制面板 · 仅监听 127.0.0.1 · 命令和日志来自真实 Server Worker</div>
   <script>
-    const cards = [...document.querySelectorAll('[data-worker]')];
+    const cards = new Map();
+    const workersRoot = document.getElementById('workers');
     function set(card, name, value) { const el = card.querySelector('[data-field="' + name + '"]'); if (el) el.textContent = value ?? '-'; }
     function stateClass(state) { return state || 'STOPPED'; }
+    function createCard(worker) {
+      const article = document.createElement('article');
+      article.className = 'worker';
+      article.dataset.worker = worker.id;
+      const head = document.createElement('div');
+      head.className = 'worker-head';
+      const title = document.createElement('div');
+      const name = document.createElement('div');
+      name.className = 'worker-title';
+      name.textContent = worker.id;
+      const subtitle = document.createElement('div');
+      subtitle.className = 'subtitle';
+      subtitle.textContent = worker.map + ' · :' + worker.port;
+      title.append(name, subtitle);
+      const state = document.createElement('span');
+      state.className = 'state';
+      state.dataset.field = 'state';
+      state.textContent = 'STOPPED';
+      head.append(title, state);
+      article.append(head);
+
+      const meta = document.createElement('div');
+      meta.className = 'meta';
+      [['进程 PID','pid'],['运行时长','uptime'],['退出码','exit'],['端口监听','portOpen'],['检查点','checkpoint'],['工作目录','runtime']].forEach(([label, field]) => {
+        const key = document.createElement('span');
+        key.textContent = label;
+        const value = document.createElement('strong');
+        value.dataset.field = field;
+        value.textContent = '-';
+        meta.append(key, value);
+      });
+      article.append(meta);
+
+      const controls = document.createElement('div');
+      controls.className = 'controls';
+      [['start','启动'],['stop','停止'],['save','保存检查点']].forEach(([action,label]) => {
+        const button = document.createElement('button');
+        button.dataset.action = action;
+        button.textContent = label;
+        controls.append(button);
+      });
+      article.append(controls);
+
+      const command = document.createElement('div');
+      command.className = 'command';
+      const input = document.createElement('input');
+      input.dataset.command = '';
+      input.placeholder = '向 ' + worker.id + ' 发送服务端命令…';
+      const send = document.createElement('button');
+      send.dataset.action = 'command';
+      send.textContent = '发送';
+      command.append(input, send);
+      article.append(command);
+
+      const logs = document.createElement('pre');
+      logs.className = 'logs';
+      logs.dataset.field = 'logs';
+      article.append(logs);
+      workersRoot.append(article);
+      cards.set(worker.id, article);
+      return article;
+    }
     async function refresh() {
       try {
         const data = await fetch('/api/overview', {cache:'no-store'}).then(r => r.json());
         document.getElementById('subtitle').textContent = 'Project: ' + data.projectRoot;
-        for (const card of cards) {
-          const w = data.workers.find(x => x.id === card.dataset.worker);
-          if (!w) continue;
+        for (const w of data.workers) {
+          const card = cards.get(w.id) || createCard(w);
           set(card, 'state', w.state);
           card.querySelector('[data-field="state"]').className = 'state ' + stateClass(w.state);
           set(card, 'pid', w.pid ?? '-');
           set(card, 'uptime', w.alive ? w.uptimeSeconds + 's' : '-');
           set(card, 'exit', w.exitCode ?? '-');
+          set(card, 'portOpen', w.portOpen ? 'listening' : 'closed');
           set(card, 'checkpoint', w.checkpoint ? 'available' : 'none');
           set(card, 'runtime', w.runtimeDir);
           const logs = card.querySelector('[data-field="logs"]');
@@ -104,7 +152,9 @@ public final class DashboardPage {
       await fetch('/api/worker/' + worker + '/' + name, {method:'POST'});
       refresh();
     }
-    document.querySelectorAll('[data-action]').forEach(button => button.addEventListener('click', async () => {
+    workersRoot.addEventListener('click', async event => {
+      const button = event.target.closest('[data-action]');
+      if (!button) return;
       const card = button.closest('[data-worker]');
       const actionName = button.dataset.action;
       if (actionName === 'command') {
@@ -116,7 +166,7 @@ public final class DashboardPage {
       } else {
         await action(card.dataset.worker, actionName);
       }
-    }));
+    });
     document.getElementById('start-all').addEventListener('click', async () => { await fetch('/api/start-all',{method:'POST'}); refresh(); });
     document.getElementById('stop-all').addEventListener('click', async () => { await fetch('/api/stop-all',{method:'POST'}); refresh(); });
     refresh();
