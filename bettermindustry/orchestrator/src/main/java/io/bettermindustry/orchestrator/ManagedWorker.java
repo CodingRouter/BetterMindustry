@@ -241,7 +241,7 @@ public class ManagedWorker {
         }
     }
 
-    private void requestDiagnosticsIfDue() {
+    private synchronized void requestDiagnosticsIfDue() {
         Process current = process;
         if (current == null || !current.isAlive()) return;
         long now = System.nanoTime();
@@ -251,7 +251,7 @@ public class ManagedWorker {
         }
     }
 
-    private void requestWorldSnapshotIfDue() {
+    private synchronized void requestWorldSnapshotIfDue() {
         Process current = process;
         if (current == null || !current.isAlive()) return;
         long now = System.nanoTime();
@@ -323,7 +323,7 @@ public class ManagedWorker {
         }
     }
 
-    private void writeCommand(String command, boolean echo) {
+    private synchronized void writeCommand(String command, boolean echo) {
         if (command == null || command.isBlank()) return;
         Process current = process;
         if (current == null || !current.isAlive() || stdin == null) return;
