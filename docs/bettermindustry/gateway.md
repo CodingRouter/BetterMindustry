@@ -44,6 +44,7 @@ Set-Cookie: bm_session=<256-bit-token>; Path=/; HttpOnly; SameSite=Strict; Max-A
 
 `Client ID` 由服务端生成，不再接受浏览器自行声明。真正的认证凭据是 256 位随机令牌；
 状态文件只保存令牌的 SHA-256 哈希，不保存明文。Session 有效期 7 天，最多同时保留 64 个。
+每个 Session 保存经过清理的 User-Agent 标签，用于设备列表展示。
 
 除首页和 Session 建立端点外，所有 HTTP API、SSE 和地图资源都要求有效 Session。缺失、
 过期或已撤销的凭据返回 HTTP 401。SSE 使用同源 Cookie，不再把 Client ID 放在查询参数中。
@@ -53,6 +54,38 @@ Set-Cookie: bm_session=<256-bit-token>; Path=/; HttpOnly; SameSite=Strict; Max-A
 
 每个 Session 保存自己的 Focus 和 WorldView 模式。Gateway 会合并所有有效 Session 的需求，
 实际采样策略按 `FULL > SUMMARY > OFF` 取最高优先级。
+
+## 登录限流
+
+登录失败按“远端地址 + 规范化用户名”统计。5 分钟窗口内累计 5 次失败后，后续登录返回
+HTTP 429，并设置 `Retry-After`。成功登录会清除该组合的失败记录。
+
+限流状态保存在 Orchestrator 内存中，最多跟踪 2,048 个组合；重启会重置。该实现用于本地
+阶段的基础防爆破，不替代公网环境下的分布式限流和审计。
+
+## 设备与 Session 管理
+
+账户会话：
+
+```text
+GET    /api/account/sessions
+DELETE /api/account/sessions/{clientId}
+DELETE /api/account/sessions
+```
+
+- `GET` 列出当前账户的全部有效 Session，以及设备标签、创建时间、过期时间和当前标记。
+- 带 `clientId` 的 `DELETE` 撤销当前账户指定的 Session。
+- 不带 `clientId` 的 `DELETE` 撤销当前账户除本机外的全部 Session。
+
+管理员会话：
+
+```text
+GET    /api/admin/sessions
+DELETE /api/admin/sessions/{clientId}
+```
+
+ADMIN 可以查看全部账户和访客 Session，并强制撤销任意 Session。返回数据不包含令牌或令牌哈希。
+任何 Session 被撤销或过期后，对应的控制租约和 Gateway 会话状态会同步清除。
 
 ## 账户与角色
 
@@ -156,9 +189,15 @@ Cookie: bm_session=<token>
 - 启动时发现历史 `PENDING` 会转为 `FAILED`，表示命令可能已发送但无法确认完成；
   该命令 ID 不会再次执行。
 
-当前 `APPLIED` 的准确含义是“Worker 进程的标准输入接受了这条命令”，不是“模拟
-Game Tick 已经确认产生最终效果”。pause/resume/chat 的效果通过实际 Worker 诊断验证；
-未来移动、建造和单位指令需要 Worker 返回带命令 ID 的执行确认。
+当前 `APPLIED` 使用 Worker 执行确认：
+
+- Gateway 发送 `bmaction <commandId> <type> [message]`。
+- Worker 只允许 `status / pause / resume / chat`，执行后输出 `BMACTION`。
+- Gateway 最多等待 3 秒确认，超时、进程停止或 Worker 返回失败时回执为 `FAILED`。
+- `APPLIED` 现在表示 Worker 已返回该 `commandId` 的成功确认。
+- 回执保存 `acknowledgementTick` 和 `acknowledgementPaused`，重复回执仍保留原执行现场。
+
+更完整的内部线路协议见 `worker-actions.md`。
 
 模拟时间窗口：
 
@@ -232,6 +271,11 @@ GET    /api/gateway/session
 POST   /api/gateway/session
 DELETE /api/gateway/session
 POST   /api/auth/register
+GET    /api/account/sessions
+DELETE /api/account/sessions/{clientId}
+DELETE /api/account/sessions
+GET    /api/admin/sessions
+DELETE /api/admin/sessions/{clientId}
 GET    /api/gateway
 POST   /api/gateway/focus/{sectorId}
 POST   /api/gateway/views/{sectorId}/{FULL|SUMMARY|OFF}
@@ -267,15 +311,15 @@ POST /api/gateway/views/sector-a/SUMMARY
 - 点击“撤销会话”销毁当前身份并释放控制权。
 - 顶部显示当前 `username · role` 并提供登录/注册对话框。
 - GUEST 的操作按钮会禁用；PLAYER 可控制；ADMIN 才能管理 Worker。
+- “会话”对话框显示设备标签、剩余有效期和当前设备，可撤销指定 Session 或退出其他设备。
+- ADMIN 的会话对话框切换为全局 Session 管理视图。
 
 ## 限制
 
 - 当前是 Web 调试客户端，不是最终 Mindustry 桌面客户端。
 - 输入路由目前只开放固定的 pause/resume/chat/status 命令；普通 UI 不再提供原始 Worker 命令框。
-- `APPLIED` 尚未包含 Worker 的游戏 Tick 级执行确认。
+- 当前只确认管理动作已经执行，尚未提供移动、建造和单位命令级结果。
 - 当前支持匿名访客与本地用户名/密码账户；OAuth、多因素认证和设备信任尚未实现。
-- Session 还没有主动列出全部设备、单独踢出其他设备或管理员强制撤销能力。
 - 账户系统还没有密码重置、账户禁用、角色修改和管理员账户管理 UI。
-- 登录接口尚未加入按账户/IP 的失败重试限流；开放远程访问前必须补齐。
 - 还没有跨 Sector 传送。
 - 采样策略是固定配置，尚未支持按客户端带宽动态调整。

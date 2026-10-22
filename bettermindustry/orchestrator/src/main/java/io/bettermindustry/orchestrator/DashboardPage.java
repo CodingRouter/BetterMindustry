@@ -37,6 +37,11 @@ public final class DashboardPage {
     .auth-form input { width:100%; border:1px solid var(--line); background:#09131d; color:var(--text); padding:10px; border-radius:7px; font:inherit; }
     .auth-actions { display:flex; gap:8px; margin-top:4px; }
     .auth-message { min-height:20px; color:var(--warn); }
+    .session-list { display:grid; gap:8px; max-height:55vh; overflow:auto; margin:4px 0; }
+    .session-item { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:10px; align-items:center; padding:10px; border:1px solid var(--line); border-radius:8px; background:#0a141e; }
+    .session-item strong { display:block; font-weight:600; overflow-wrap:anywhere; }
+    .session-item small { display:block; margin-top:3px; color:var(--muted); }
+    .session-current { color:var(--good); }
     .pipeline { margin-top:18px; padding:14px 18px; border:1px solid var(--line); background:#0d1824cc; border-radius:12px; display:flex; align-items:center; gap:18px; flex-wrap:wrap; }
     .pipe-node { padding:10px 14px; border:1px solid #2b4c69; border-radius:8px; background:#122538; min-width:150px; }
     .pipe-node small { color:var(--muted); }
@@ -76,7 +81,7 @@ public final class DashboardPage {
 <body>
   <header>
     <div><h1>BetterMindustry Debugger</h1><div class="subtitle" id="subtitle">正在建立安全会话…</div></div>
-    <div class="toolbar"><span class="session-pill" id="session-role">GUEST</span><button id="login-button">登录 / 注册</button><button id="revoke-session">退出并重置</button><button class="primary" id="start-all">启动全部</button><button class="danger" id="stop-all">停止全部</button></div>
+    <div class="toolbar"><span class="session-pill" id="session-role">GUEST</span><button id="sessions-button">会话</button><button id="login-button">登录 / 注册</button><button id="revoke-session">退出并重置</button><button class="primary" id="start-all">启动全部</button><button class="danger" id="stop-all">停止全部</button></div>
   </header>
   <section class="pipeline">
     <span class="pipe-node">Game Tick<br><small id="game-pipe-status">等待 Game Tick</small></span>
@@ -107,6 +112,18 @@ public final class DashboardPage {
         <button value="cancel">关闭</button>
       </div>
     </form>
+  </dialog>
+  <dialog id="sessions-dialog">
+    <div class="auth-form">
+      <h2>设备会话</h2>
+      <p id="sessions-scope">正在加载 Session…</p>
+      <div class="session-list" id="sessions-list"></div>
+      <div class="auth-actions">
+        <button class="danger" id="revoke-other-sessions" type="button">退出其他设备</button>
+        <button id="refresh-sessions" type="button">刷新</button>
+        <button id="close-sessions" type="button">关闭</button>
+      </div>
+    </div>
   </dialog>
   <script>
     const cards = new Map();
@@ -489,6 +506,78 @@ public final class DashboardPage {
         document.getElementById('auth-login').click();
       }
     });
+
+    const sessionsDialog = document.getElementById('sessions-dialog');
+    const sessionsList = document.getElementById('sessions-list');
+    const sessionsScope = document.getElementById('sessions-scope');
+    const revokeOtherSessions = document.getElementById('revoke-other-sessions');
+
+    function sessionEndpoint() {
+      return currentRole === 'ADMIN' ? '/api/admin/sessions' : '/api/account/sessions';
+    }
+    async function loadSessions() {
+      sessionsList.replaceChildren();
+      sessionsScope.textContent = currentRole === 'ADMIN'
+        ? '管理员视图：显示全部账户和访客 Session。'
+        : '当前账户的设备 Session。';
+      const response = await apiFetch(sessionEndpoint(), {cache:'no-store'});
+      if (!response.ok) {
+        sessionsScope.textContent = await response.text();
+        return;
+      }
+      const data = await response.json();
+      for (const session of data.sessions) {
+        const item = document.createElement('div');
+        item.className = 'session-item';
+        const text = document.createElement('div');
+        const title = document.createElement('strong');
+        title.textContent = session.label;
+        const details = document.createElement('small');
+        const identity = session.username ? session.username + ' · ' + session.role : 'GUEST';
+        details.textContent = identity + ' · ' + session.clientId.slice(0, 14)
+          + '… · 剩余 ' + formatTime(Math.floor(session.expiresInMillis / 1000));
+        if (session.current) {
+          title.classList.add('session-current');
+          title.textContent += ' · 当前设备';
+          details.textContent = identity + ' · ' + session.clientId.slice(0, 14) + '…';
+        }
+        text.append(title, details);
+        const revoke = document.createElement('button');
+        revoke.textContent = session.current ? '当前' : '撤销';
+        revoke.disabled = session.current;
+        revoke.addEventListener('click', async () => {
+          if (!confirm('撤销这个 Session？')) return;
+          const target = sessionEndpoint() + '/' + encodeURIComponent(session.clientId);
+          const revokeResponse = await apiFetch(target, {method:'DELETE'});
+          if (!revokeResponse.ok) alert(await revokeResponse.text());
+          await loadSessions();
+        });
+        item.append(text, revoke);
+        sessionsList.append(item);
+      }
+      if (!data.sessions.length) {
+        sessionsScope.textContent = '当前没有可显示的 Session。';
+      }
+    }
+    document.getElementById('sessions-button').addEventListener('click', () => {
+      if (currentRole === 'GUEST') {
+        authMessage.textContent = '请先登录账户再管理设备 Session。';
+        authDialog.showModal();
+        return;
+      }
+      revokeOtherSessions.hidden = currentRole === 'ADMIN';
+      sessionsDialog.showModal();
+      loadSessions();
+    });
+    document.getElementById('refresh-sessions').addEventListener('click', loadSessions);
+    document.getElementById('close-sessions').addEventListener('click', () => sessionsDialog.close());
+    revokeOtherSessions.addEventListener('click', async () => {
+      if (!confirm('撤销当前账户除本机外的全部 Session？')) return;
+      const response = await apiFetch('/api/account/sessions', {method:'DELETE'});
+      if (!response.ok) alert(await response.text());
+      await loadSessions();
+    });
+
     document.getElementById('revoke-session').addEventListener('click', async () => {
       if (!clientId || !confirm('销毁当前会话并释放它的控制权？页面会以新的访客身份重新加载。')) return;
       if (renderStream) renderStream.close();

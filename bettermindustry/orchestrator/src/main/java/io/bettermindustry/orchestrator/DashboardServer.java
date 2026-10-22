@@ -21,6 +21,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -28,6 +29,7 @@ public class DashboardServer {
     private static final String SESSION_COOKIE = "bm_session";
     private final WorkerManager manager;
     private final Gateway gateway;
+    private final LoginThrottle loginThrottle = new LoginThrottle();
     private final int port;
     private final AtomicLong renderSequence = new AtomicLong();
     private HttpServer server;
@@ -49,6 +51,8 @@ public class DashboardServer {
         server.createContext("/api/render/stream", secure(this::renderStream));
         server.createContext("/api/render/world/", secure(this::renderWorld));
         server.createContext("/api/auth/register", secure(this::registerAccount));
+        server.createContext("/api/account/sessions", secure(this::accountSessions));
+        server.createContext("/api/admin/sessions", secure(this::adminSessions));
         server.createContext("/api/gateway/session", secure(this::gatewaySession));
         server.createContext("/api/gateway", secure(this::gatewayState));
         server.createContext("/api/gateway/focus/", secure(this::gatewayFocus));
@@ -123,20 +127,32 @@ public class DashboardServer {
         }
         if ("POST".equalsIgnoreCase(method)) {
             String body = readBody(exchange);
+            String label = userAgent(exchange);
             AuthSessionBook.Issued issued;
             if (body.isBlank()) {
                 if (token != null) gateway.revokeSession(token);
-                issued = gateway.issueSession();
+                issued = gateway.issueSession(label);
             } else {
                 try {
                     Map<String, String> form = parseForm(body);
-                    issued = gateway.loginSession(form.get("username"), form.get("password"));
+                    String username = form.get("username");
+                    String throttleKey = loginThrottleKey(exchange, username);
+                    long now = System.currentTimeMillis();
+                    long blocked = loginThrottle.blockedForMillis(throttleKey, now);
+                    if (blocked > 0) {
+                        sendRateLimited(exchange, blocked);
+                        return;
+                    }
+                    issued = gateway.loginSession(username, form.get("password"), label);
+                    if (issued == null) {
+                        long retry = loginThrottle.recordFailure(throttleKey, now);
+                        if (retry > 0) sendRateLimited(exchange, retry);
+                        else send(exchange, 401, "Invalid username or password", "text/plain; charset=utf-8");
+                        return;
+                    }
+                    loginThrottle.recordSuccess(throttleKey);
                 } catch (IllegalArgumentException e) {
                     send(exchange, 400, e.getMessage(), "text/plain; charset=utf-8");
-                    return;
-                }
-                if (issued == null) {
-                    send(exchange, 401, "Invalid username or password", "text/plain; charset=utf-8");
                     return;
                 }
                 if (token != null) gateway.revokeSession(token);
@@ -179,6 +195,80 @@ public class DashboardServer {
         } catch (IllegalStateException e) {
             send(exchange, 409, e.getMessage(), "text/plain; charset=utf-8");
         }
+    }
+
+    private void accountSessions(HttpExchange exchange) throws IOException {
+        Gateway.Identity identity = requireRole(exchange, Role.PLAYER);
+        if (identity == null) return;
+        String[] parts = exchange.getRequestURI().getPath().split("/");
+        if ("GET".equalsIgnoreCase(exchange.getRequestMethod()) && parts.length == 4) {
+            sendSessions(exchange, gateway.accountSessions(identity));
+            return;
+        }
+        if ("DELETE".equalsIgnoreCase(exchange.getRequestMethod()) && parts.length == 4) {
+            int revoked = gateway.revokeOtherSessions(identity);
+            send(exchange, 200, "{\"ok\":true,\"revoked\":" + revoked + "}",
+                "application/json; charset=utf-8");
+            return;
+        }
+        if ("DELETE".equalsIgnoreCase(exchange.getRequestMethod()) && parts.length == 5) {
+            if (!gateway.revokeAccountSession(identity, parts[4])) {
+                send(exchange, 404, "Session not found", "text/plain; charset=utf-8");
+                return;
+            }
+            send(exchange, 200, "{\"ok\":true}", "application/json; charset=utf-8");
+            return;
+        }
+        send(exchange, 405, "Method not allowed", "text/plain; charset=utf-8");
+    }
+
+    private void adminSessions(HttpExchange exchange) throws IOException {
+        Gateway.Identity identity = requireRole(exchange, Role.ADMIN);
+        if (identity == null) return;
+        String[] parts = exchange.getRequestURI().getPath().split("/");
+        if ("GET".equalsIgnoreCase(exchange.getRequestMethod()) && parts.length == 4) {
+            sendSessions(exchange, gateway.allSessions(identity));
+            return;
+        }
+        if ("DELETE".equalsIgnoreCase(exchange.getRequestMethod()) && parts.length == 5) {
+            if (!gateway.revokeAdminSession(identity, parts[4])) {
+                send(exchange, 404, "Session not found", "text/plain; charset=utf-8");
+                return;
+            }
+            send(exchange, 200, "{\"ok\":true}", "application/json; charset=utf-8");
+            return;
+        }
+        send(exchange, 405, "Method not allowed", "text/plain; charset=utf-8");
+    }
+
+    private void sendSessions(
+        HttpExchange exchange,
+        List<Gateway.SessionSummary> sessions
+    ) throws IOException {
+        StringBuilder json = new StringBuilder();
+        json.append("{\"sessions\":[");
+        for (int i = 0; i < sessions.size(); i++) {
+            if (i > 0) json.append(',');
+            Gateway.SessionSummary session = sessions.get(i);
+            json.append('{');
+            json.append("\"clientId\":\"").append(escape(session.clientId())).append("\",");
+            json.append("\"username\":");
+            if (session.username() == null) {
+                json.append("null");
+            } else {
+                json.append('"').append(escape(session.username())).append('"');
+            }
+            json.append(',');
+            json.append("\"role\":\"").append(session.role().name()).append("\",");
+            json.append("\"label\":\"").append(escape(session.label())).append("\",");
+            json.append("\"createdAtMillis\":").append(session.createdAtMillis()).append(',');
+            json.append("\"expiresAtMillis\":").append(session.expiresAtMillis()).append(',');
+            json.append("\"expiresInMillis\":").append(session.expiresInMillis()).append(',');
+            json.append("\"current\":").append(session.current());
+            json.append('}');
+        }
+        json.append("]}");
+        send(exchange, 200, json.toString(), "application/json; charset=utf-8");
     }
 
     private void sendSession(
@@ -421,16 +511,12 @@ public class DashboardServer {
         String clientId = identity.clientId();
         String sectorId = parts[5];
         String action = parts[4];
-        String command;
         String detail;
         if ("status".equals(action)) {
-            command = "status";
             detail = "";
         } else if ("pause".equals(action)) {
-            command = "pause on";
             detail = "on";
         } else if ("resume".equals(action)) {
-            command = "pause off";
             detail = "off";
         } else if ("chat".equals(action)) {
             detail = readBody(exchange)
@@ -441,7 +527,6 @@ public class DashboardServer {
                 send(exchange, 400, "Chat message must contain 1-150 characters", "text/plain; charset=utf-8");
                 return;
             }
-            command = "say " + detail;
         } else {
             send(exchange, 400, "Unknown input action: " + action, "text/plain; charset=utf-8");
             return;
@@ -449,9 +534,14 @@ public class DashboardServer {
 
         try {
             ManagedWorker worker = gateway.authorizeInput(clientId, identity.role(), sectorId);
-            String result = worker.sendCommand(command);
-            if (!"Sent".equals(result)) {
-                send(exchange, 409, result, "text/plain; charset=utf-8");
+            String commandId = "legacy-" + UUID.randomUUID();
+            ManagedWorker.ActionResult result = worker.executeAction(
+                commandId,
+                action,
+                "chat".equals(action) ? detail : null
+            );
+            if (!result.applied()) {
+                send(exchange, 409, result.detail(), "text/plain; charset=utf-8");
                 return;
             }
             gateway.recordInput(clientId, sectorId, action, detail);
@@ -485,19 +575,20 @@ public class DashboardServer {
                 case RESUME -> "off";
                 case CHAT -> envelope.message();
             };
-            String command = switch (envelope.type()) {
-                case STATUS -> "status";
-                case PAUSE -> "pause on";
-                case RESUME -> "pause off";
-                case CHAT -> "say " + envelope.message();
-            };
-
-            String result = admission.worker().sendCommand(command);
-            if (!"Sent".equals(result)) {
+            String action = envelope.type().name().toLowerCase(Locale.ROOT);
+            ManagedWorker.ActionResult result = admission.worker().executeAction(
+                envelope.commandId(),
+                action,
+                envelope.type() == io.bettermindustry.protocol.InputCommandType.CHAT
+                    ? envelope.message()
+                    : null
+            );
+            if (!result.applied()) {
                 InputReceiptBook.Receipt failed = gateway.completeInput(
                     envelope.commandId(),
                     InputReceiptBook.Status.FAILED,
-                    result
+                    result.detail(),
+                    result.acknowledgement()
                 );
                 sendInputReceipt(exchange, failed, false);
                 return;
@@ -506,7 +597,8 @@ public class DashboardServer {
             InputReceiptBook.Receipt applied = gateway.completeInput(
                 envelope.commandId(),
                 InputReceiptBook.Status.APPLIED,
-                detail
+                detail,
+                result.acknowledgement()
             );
             gateway.recordInput(
                 clientId,
@@ -545,6 +637,14 @@ public class DashboardServer {
         json.append("\"status\":\"").append(receipt.status().name()).append("\",");
         json.append("\"duplicate\":").append(duplicate).append(',');
         json.append("\"detail\":\"").append(escape(receipt.detail())).append("\",");
+        json.append("\"acknowledgementTick\":").append(receipt.acknowledgementTick()).append(',');
+        json.append("\"acknowledgementPaused\":");
+        if (receipt.acknowledgementPaused() == null) {
+            json.append("null");
+        } else {
+            json.append(receipt.acknowledgementPaused());
+        }
+        json.append(',');
         json.append("\"updatedAtMillis\":").append(receipt.updatedAtMillis());
         json.append('}');
         send(exchange, status, json.toString(), "application/json; charset=utf-8");
@@ -810,6 +910,23 @@ public class DashboardServer {
             }
         }
         return null;
+    }
+
+    private static String loginThrottleKey(HttpExchange exchange, String username) {
+        String address = exchange.getRemoteAddress().getAddress().getHostAddress();
+        String normalized = username == null ? "" : username.trim().toLowerCase(Locale.ROOT);
+        return address + "|" + normalized;
+    }
+
+    private static String userAgent(HttpExchange exchange) {
+        String value = exchange.getRequestHeaders().getFirst("User-Agent");
+        return value == null || value.isBlank() ? "Unknown device" : value;
+    }
+
+    private static void sendRateLimited(HttpExchange exchange, long retryAfterMillis) throws IOException {
+        long seconds = Math.max(1, (retryAfterMillis + 999L) / 1_000L);
+        exchange.getResponseHeaders().set("Retry-After", Long.toString(seconds));
+        send(exchange, 429, "Too many failed login attempts; retry later", "text/plain; charset=utf-8");
     }
 
     private static void setSessionCookie(HttpExchange exchange, String token) {

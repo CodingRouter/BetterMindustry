@@ -33,9 +33,10 @@
 这个选择提供“不重复执行”保证。它可能牺牲少数不确定命令的自动重试能力，但比重复暂停、
 重复聊天或未来重复建造更安全。
 
-`APPLIED` 目前表示命令已写入 Worker 标准输入，不表示世界在某个 Game Tick 已确认最终效果。
-pause/resume/chat 已通过 Worker 诊断做运行验收；未来需要更强语义的输入必须增加 Worker
-执行回执，并在协议里携带原始 `commandId`。
+本阶段的 `APPLIED` 表示命令已写入 Worker 标准输入，不表示世界在某个 Game Tick 已确认
+最终效果。后续已在
+[Worker 动作确认](2026-10-22-acknowledged-input-checkpoint.md) 中加入带原始 `commandId`
+的 `BMACTION` 执行回执。
 
 ## 自动测试
 

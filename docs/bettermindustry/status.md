@@ -1,8 +1,8 @@
 # 当前状态与交接
 
 - 最后更新：2026-10-22
-- 当前分支：`feat/m1b-input-envelope`
-- 当前阶段：M1B-AccountsRoles 检查点已完成
+- 当前分支：`feat/m1b-acknowledged-input-checkpoint`
+- 当前阶段：M1B-AcknowledgedInput 检查点已完成
 - 当前里程碑：M1A 完成，M1B 原型进行中
 
 ## 已完成
@@ -48,11 +48,19 @@
 - Session 绑定用户名，账户和角色可跨 Orchestrator 重启恢复。
 - GUEST 只能观察，PLAYER 可以控制 Sector，ADMIN 才能管理 Worker。
 - 调试器按角色禁用操作按钮，并显示当前用户名与角色。
+- 登录失败按地址和用户名限制为 5 次/5 分钟，超限返回 429 与 `Retry-After`。
+- Session 保存设备标签，账户可列出、撤销指定设备或退出其他设备。
+- ADMIN 可查看全部 Session 并强制撤销任意 Session。
+- 调试器增加设备会话管理窗口和管理员全局 Session 视图。
+- Worker 新增 `bmaction` 管理动作和 `BMACTION` 执行确认。
+- Gateway 等待 Worker 确认后才返回 `APPLIED`，3 秒超时转为 `FAILED`。
+- 输入回执保存确认 Tick 和 paused 状态，重复回执保留原执行现场。
 
 ## 本轮验证
 
 - `bettermindustry/protocol clean build`：通过，5 个测试全部通过。
-- `bettermindustry/orchestrator clean build`：通过，14 个测试全部通过；两个模块共 19 个测试。
+- `server:dist`：通过，包含新的 Worker `bmaction` 命令。
+- `bettermindustry/orchestrator clean build`：通过，19 个测试全部通过；两个模块共 24 个测试。
 - 两个真实 Worker 完成正常 pause/resume/chat、重复回执、命令冲突、过期窗口、错误 Focus、
   无租约、跨 Client 命令 ID 和超长聊天验收。
 - 重复投递没有重复执行或重复写审计。
@@ -74,6 +82,20 @@
 - GUEST 获取控制和管理 Worker 均返回 403。
 - PLAYER 可获取控制，但管理 Worker 返回 403。
 - ADMIN 可保存检查点，完整重启后两个账户仍以原角色登录。
+- 两个设备 Session 显示不同 User-Agent 标签，且只有一个标记为当前设备。
+- 账户撤销指定设备后旧 Cookie 返回 401。
+- “退出其他设备”只保留当前 Session，其他设备立即返回 401。
+- ADMIN 全局会话列表可看到 PLAYER、ADMIN 和访客，并可强制撤销目标 Session。
+- 连续错误密码状态为 `401, 401, 401, 401, 429`，第 5 次返回
+  `Retry-After: 300`；限流期间正确密码同样被拒绝。
+- `status` 成功回执带 Worker `acknowledgementTick`。
+- `pause` 回执带 `acknowledgementPaused=true`，`resume` 回执带 `false`。
+- `chat` 成功等待 Worker 执行确认后返回 `APPLIED`。
+- 重复 `pause` 回执保留第一次确认的 Tick 与 paused 状态。
+- Worker 停止后新输入回执持久化为 `FAILED`，详情为 Worker 未运行。
+- 安全测试：GUEST 输入返回 403；未知动作、非法命令 ID、151 字符聊天均返回 400。
+- Chat 注入文本 `hello"; exit` 返回 APPLIED，Worker 和端口仍保持运行。
+- 同一 `commandId` 改成另一动作返回 409；Worker 停止后的回执持久化为 FAILED。
 
 ## 当前架构决定
 
@@ -86,17 +108,20 @@
 - 上游同步采用差异审查和人工移植，不自动引入完整历史。
 - 当前身份可以是匿名访客或绑定本地账户的 Session；外部身份提供商尚未接入。
 - 控制面只信任同源请求、有效 Cookie 和固定 Worker 命令，不信任客户端声明的身份。
-- 当前账户系统只用于本地调试；远程开放前必须增加登录限流、管理员引导和账户管理。
+- 当前账户系统只用于本地调试；远程开放前必须增加受控管理员引导、密码恢复和账户管理。
+- 登录限流目前是单 Orchestrator 内存窗口，远程多实例前需要共享限流与审计存储。
+- Worker 确认超时为 3 秒；高延迟部署前需要把超时和重试策略能力化。
 
 ## 下一步
 
 M1B 后续：
 
-1. 完成 M1B-AccountsRoles 检查点收尾、验证和文档归档。
+1. 完成 M1B-AcknowledgedInput 检查点封存和安全测试。
 2. 下一阶段再评估受控移动、建造和单位命令。
-3. 增加登录失败限流、Session/设备列表和管理员强制撤销。
-4. 按客户端带宽动态调整订阅频率。
-5. 将浏览器 WorldView 迁移到真正的 Mindustry 桌面客户端。
+3. 为动作确认加入能力协商、超时配置和高延迟重试策略。
+4. 将单进程登录限流迁移到多实例可共享的存储与审计。
+5. 按客户端带宽动态调整订阅频率。
+6. 将浏览器 WorldView 迁移到真正的 Mindustry 桌面客户端。
 
 双世界手工实验记录见 `docs/bettermindustry/spikes/0001-two-worker-manual.md`。
 调试器说明见 `docs/bettermindustry/tools/debugger.md`。
