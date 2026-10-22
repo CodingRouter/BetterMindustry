@@ -4,6 +4,10 @@
 
 | 日期 | 内容 |
 | --- | --- |
+| [2026-10-22 AccountsRoles 检查点](2026-10-22-accounts-roles-checkpoint.md) | 账户、PBKDF2、角色授权和检查点验收 |
+| [2026-10-22 认证访客 Session](2026-10-22-authenticated-sessions.md) | 随机令牌、HttpOnly Cookie、撤销和本地请求防伪 |
+| [2026-10-22 持久化输入回执](2026-10-22-durable-input-receipts.md) | 跨重启幂等、原子状态写入和崩溃恢复 |
+| [2026-10-22 Input Envelope](2026-10-22-input-envelope.md) | 版本化输入、幂等回执、Tick 窗口和运行验收 |
 | [2026-10-22 ControlChain 检查点](2026-10-22-control-chain-checkpoint.md) | 多 Session、租约、受控命令和审计验收 |
 | [2026-10-22 M1B Gateway](2026-10-22-m1b-gateway.md) | Gateway 状态、多 WorldView 和 Render v2 原型 |
 | [2026-10-22 M1A 验收](2026-10-22-m1a-acceptance.md) | 10 分钟连续运行、故障隔离和控制层恢复结果 |

@@ -26,6 +26,28 @@
 - 多 Client Session、独立 Focus/ViewMode 和有效视口合并。
 - Focus 控制租约接入首个授权输入端点。
 - 受控输入 v1、pause/resume/chat 和 Gateway 输入审计。
+- 版本化 Input Envelope、命令 ID、Tick 截止窗口和重复投递回执。
+- 同一命令 ID 的客户端/命令冲突检测，以及只执行一次的输入审计。
+- 调试器 pause/resume/chat 切换到 Input Envelope，并增加同信封网络重试。
+- Protocol 模块加入输入信封单元测试。
+- 输入回执持久化到 Gateway 状态文件，并采用临时文件原子替换。
+- Orchestrator 重启后继续返回已完成命令的原回执。
+- 启动时将无法确认完成的 `PENDING` 回执恢复为 `FAILED`，防止重复执行。
+- Orchestrator 模块加入回执账本持久化、冲突、过期和容量测试。
+- 记录 Codex Windows 沙箱内无头 Edge 崩溃的排查结论和外部浏览器验证方式。
+- 服务端签发 256 位随机令牌的认证访客 Session，Client ID 不再由浏览器声明。
+- Session Cookie 使用 HttpOnly 和 SameSite=Strict，状态文件只保存令牌 SHA-256 哈希。
+- 除首页和 Session 端点外，HTTP API、SSE 和地图资源全部要求有效 Session。
+- Session 可跨 Orchestrator 重启恢复，撤销时立即释放其控制租约。
+- 本地控制面增加 Host 校验防 DNS rebinding，并校验写请求 Origin。
+- 调试器增加“撤销会话”入口和 Auth Session 自动建立流程。
+- Orchestrator 模块加入 Session 签发、认证、撤销、持久化、过期和容量测试。
+- 新增 GUEST/PLAYER/ADMIN 账户与角色授权。
+- 密码使用随机盐和 210,000 次 PBKDF2-HMAC-SHA256 派生哈希保存。
+- Session 绑定用户名，账户跨 Orchestrator 重启恢复。
+- PLAYER 才能获取控制与发送输入，ADMIN 才能管理 Worker。
+- 调试器增加登录/注册对话框、身份徽标和角色按钮禁用。
+- Orchestrator 模块加入账户注册、密码验证、持久化和角色测试。
 
 ### Next
 

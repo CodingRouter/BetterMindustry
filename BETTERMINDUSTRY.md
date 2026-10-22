@@ -29,6 +29,8 @@ BetterMindustry 是基于 Mindustry 的多人游戏平台分支：在兼容原�
 - [多视口客户端决策](docs/bettermindustry/decisions/0002-multi-world-client.md)
 - [快照分叉决策](docs/bettermindustry/decisions/0003-snapshot-fork.md)
 - [Tick 与渲染分离决策](docs/bettermindustry/decisions/0004-tick-render-separation.md)
+- [认证 Client Session 决策](docs/bettermindustry/decisions/0005-authenticated-client-sessions.md)
+- [账户与角色权限决策](docs/bettermindustry/decisions/0006-account-roles.md)
 - [Web 调试器](docs/bettermindustry/tools/debugger.md)
 - [Render Tick 快照流](docs/bettermindustry/render-stream.md)
 - [Gateway 与多 WorldView](docs/bettermindustry/gateway.md)

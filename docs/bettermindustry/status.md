@@ -1,8 +1,8 @@
 # 当前状态与交接
 
 - 最后更新：2026-10-22
-- 当前分支：`feat/m1b-control-chain-checkpoint`
-- 当前阶段：M1B-ControlChain 检查点已完成
+- 当前分支：`feat/m1b-input-envelope`
+- 当前阶段：M1B-AccountsRoles 检查点已完成
 - 当前里程碑：M1A 完成，M1B 原型进行中
 
 ## 已完成
@@ -29,6 +29,51 @@
 - Focus 控制租约已接入固定 `status` 测试输入，观察者和无租约请求会被拒绝。
 - 受控输入支持 pause/resume/chat，并写入 Gateway 审计。
 - 普通 UI 已移除绕过 Gateway 的原始命令框。
+- 新增版本化 Input Envelope 和 `commandId` 幂等回执。
+- 输入校验包含协议版本、Ticks、命令类型、聊天内容和 Retry 冲突。
+- `pause / resume / chat` 已切换到 `/api/gateway/input/envelope`。
+- 重复输入只返回原回执，不再次执行或重复写审计。
+- 输入回执已持久化，并通过临时文件原子替换写入 Gateway 状态文件。
+- 已验证完整停止并重启 Orchestrator 后，同一 `commandId` 仍返回 `duplicate=true`。
+- 重启时遗留的 `PENDING` 回执会转为 `FAILED`，保留“不重复执行”保证。
+- 服务端生成 256 位随机 Session 令牌，Client ID 不再由请求头自行声明。
+- Cookie 使用 HttpOnly 和 SameSite=Strict，状态文件只保存令牌 SHA-256 哈希。
+- Session 支持建立、恢复、撤销和 7 天过期，最多保留 64 个。
+- 撤销 Session 会立即释放它持有的控制租约。
+- HTTP API、SSE 和地图资源全部接入 Session 认证。
+- 控制面校验 Host 和写请求 Origin，拒绝 DNS rebinding 与跨站写请求。
+- Web 调试器不再使用 localStorage Client ID，并新增“撤销会话”按钮。
+- 新增 GUEST/PLAYER/ADMIN 账户角色和登录/注册流程。
+- 密码使用随机盐与 210,000 次 PBKDF2-HMAC-SHA256，不保存明文。
+- Session 绑定用户名，账户和角色可跨 Orchestrator 重启恢复。
+- GUEST 只能观察，PLAYER 可以控制 Sector，ADMIN 才能管理 Worker。
+- 调试器按角色禁用操作按钮，并显示当前用户名与角色。
+
+## 本轮验证
+
+- `bettermindustry/protocol clean build`：通过，5 个测试全部通过。
+- `bettermindustry/orchestrator clean build`：通过，14 个测试全部通过；两个模块共 19 个测试。
+- 两个真实 Worker 完成正常 pause/resume/chat、重复回执、命令冲突、过期窗口、错误 Focus、
+  无租约、跨 Client 命令 ID 和超长聊天验收。
+- 重复投递没有重复执行或重复写审计。
+- 两个 Worker 均优雅退出且退出码为 0，检查点存在。
+- 测试端口和 Java 进程无残留；测试 Gateway 状态、审计和临时浏览器目录已清理。
+- 无头 Edge 在本机以 `0xC0000005` 崩溃，因此没有自动浏览器截图；页面资源与 UI 使用的
+  envelope 端点已通过实际 HTTP 请求确认。
+- Edge 崩溃已定位到 Codex 沙箱的受限 `LOCALAPPDATA` 与 App-Bound Encryption 权限冲突；
+  后续浏览器自动化应使用沙箱外的正常桌面浏览器。
+- 完整关闭并重启 Orchestrator 后，`restart-receipt-1` 仍返回原 `APPLIED` 回执，
+  审计记录保持 1 条。
+- 无 Cookie 和伪造 `X-BM-Client-Id` 均返回 401。
+- 同源 Session 创建成功，Cookie 为 HttpOnly；状态文件不包含明文令牌。
+- 撤销 Session 后原 Cookie 返回 401，另一 Session 可立即取得原本被占用的控制权。
+- Orchestrator 重启后原 Session 令牌仍能恢复同一个 Client ID，撤销后立即失效。
+- 非法 Host 返回 421，其他本地端口 Origin 返回 403，同源 Origin 返回 200。
+- 首个账户注册为 ADMIN，第二个账户注册为 PLAYER。
+- 错误密码返回 401，账户文件不包含明文密码。
+- GUEST 获取控制和管理 Worker 均返回 403。
+- PLAYER 可获取控制，但管理 Worker 返回 403。
+- ADMIN 可保存检查点，完整重启后两个账户仍以原角色登录。
 
 ## 当前架构决定
 
@@ -39,15 +84,19 @@
 - 多视口 MVP 先使用主线程顺序场景绑定；长期再迁移到真正可实例化的 `GameContext`。
 - 不把账本平均产率标成精确模拟。
 - 上游同步采用差异审查和人工移植，不自动引入完整历史。
+- 当前身份可以是匿名访客或绑定本地账户的 Session；外部身份提供商尚未接入。
+- 控制面只信任同源请求、有效 Cookie 和固定 Worker 命令，不信任客户端声明的身份。
+- 当前账户系统只用于本地调试；远程开放前必须增加登录限流、管理员引导和账户管理。
 
 ## 下一步
 
 M1B 后续：
 
-1. 将测试输入扩展为受控移动、建造和单位命令。
-2. 将 Client ID 绑定到用户认证和控制权撤销。
-3. 按客户端带宽动态调整订阅频率。
-4. 将浏览器 WorldView 迁移到真正的 Mindustry 桌面客户端。
+1. 完成 M1B-AccountsRoles 检查点收尾、验证和文档归档。
+2. 下一阶段再评估受控移动、建造和单位命令。
+3. 增加登录失败限流、Session/设备列表和管理员强制撤销。
+4. 按客户端带宽动态调整订阅频率。
+5. 将浏览器 WorldView 迁移到真正的 Mindustry 桌面客户端。
 
 双世界手工实验记录见 `docs/bettermindustry/spikes/0001-two-worker-manual.md`。
 调试器说明见 `docs/bettermindustry/tools/debugger.md`。
