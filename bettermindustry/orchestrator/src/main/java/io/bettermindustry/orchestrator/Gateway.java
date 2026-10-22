@@ -110,6 +110,23 @@ public final class Gateway {
         return snapshot(clientId);
     }
 
+    public synchronized ManagedWorker authorizeInput(String clientId, String sectorId) {
+        requireWorker(sectorId);
+        requireClient(clientId);
+        long now = System.currentTimeMillis();
+        expireLeases(now);
+        SessionState session = session(clientId);
+        if (!sectorId.equals(session.focusSectorId)) {
+            throw new IllegalStateException("input denied: sector is not the client's focus");
+        }
+        ControlLease lease = leases.get(sectorId);
+        if (lease == null || !lease.ownerId.equals(clientId)) {
+            throw new IllegalStateException("input denied: active control lease required");
+        }
+        touch(session);
+        return manager.find(sectorId);
+    }
+
     public synchronized Snapshot snapshot(String clientId) {
         long now = System.currentTimeMillis();
         expireLeases(now);

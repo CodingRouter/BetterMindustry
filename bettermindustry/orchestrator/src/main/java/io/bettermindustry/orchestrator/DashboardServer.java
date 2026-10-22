@@ -48,6 +48,7 @@ public class DashboardServer {
         server.createContext("/api/gateway/focus/", this::gatewayFocus);
         server.createContext("/api/gateway/views/", this::gatewayView);
         server.createContext("/api/gateway/control/", this::gatewayControl);
+        server.createContext("/api/gateway/input/", this::gatewayInput);
         server.createContext("/api/start-all", exchange -> action(exchange, () -> manager.startAll()));
         server.createContext("/api/stop-all", exchange -> action(exchange, () -> manager.stopAll()));
         server.createContext("/api/worker/", this::workerAction);
@@ -263,6 +264,37 @@ public class DashboardServer {
             send(exchange, 400, e.getMessage(), "text/plain; charset=utf-8");
         } catch (IllegalStateException e) {
             send(exchange, 409, e.getMessage(), "text/plain; charset=utf-8");
+        }
+    }
+
+    private void gatewayInput(HttpExchange exchange) throws IOException {
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            send(exchange, 405, "Method not allowed", "text/plain; charset=utf-8");
+            return;
+        }
+        String[] parts = exchange.getRequestURI().getPath().split("/");
+        if (parts.length != 6 || !"status".equals(parts[4])) {
+            send(exchange, 400, "Only the status input is currently supported", "text/plain; charset=utf-8");
+            return;
+        }
+
+        String clientId = clientId(exchange);
+        String sectorId = parts[5];
+        try {
+            ManagedWorker worker = gateway.authorizeInput(clientId, sectorId);
+            String result = worker.sendCommand("status");
+            if (!"Sent".equals(result)) {
+                send(exchange, 409, result, "text/plain; charset=utf-8");
+                return;
+            }
+            send(exchange, 200,
+                "{\"ok\":true,\"clientId\":\"" + escape(clientId)
+                    + "\",\"sectorId\":\"" + escape(sectorId) + "\",\"command\":\"status\"}",
+                "application/json; charset=utf-8");
+        } catch (IllegalArgumentException e) {
+            send(exchange, 400, e.getMessage(), "text/plain; charset=utf-8");
+        } catch (IllegalStateException e) {
+            send(exchange, 403, e.getMessage(), "text/plain; charset=utf-8");
         }
     }
 

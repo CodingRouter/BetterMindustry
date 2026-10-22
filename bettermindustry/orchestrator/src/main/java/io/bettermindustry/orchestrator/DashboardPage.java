@@ -181,7 +181,7 @@ public final class DashboardPage {
 
       const controls = document.createElement('div');
       controls.className = 'controls';
-      [['start','启动'],['stop','停止'],['save','保存检查点'],['gateway-focus','设为主控'],['gateway-view','切换视口'],['gateway-acquire','获取控制'],['gateway-release','释放控制']].forEach(([action,label]) => {
+      [['start','启动'],['stop','停止'],['save','保存检查点'],['gateway-focus','设为主控'],['gateway-view','切换视口'],['gateway-acquire','获取控制'],['gateway-release','释放控制'],['gateway-input','测试输入']].forEach(([action,label]) => {
         const button = document.createElement('button');
         if (action.startsWith('gateway-')) {
           button.dataset.gatewayAction = action.substring('gateway-'.length);
@@ -334,6 +334,8 @@ public final class DashboardPage {
           response = await apiFetch('/api/gateway/control/acquire/' + card.dataset.worker, {method:'POST'});
         } else if (gatewayButton.dataset.gatewayAction === 'release') {
           response = await apiFetch('/api/gateway/control/release/' + card.dataset.worker, {method:'POST'});
+        } else if (gatewayButton.dataset.gatewayAction === 'input') {
+          response = await apiFetch('/api/gateway/input/status/' + card.dataset.worker, {method:'POST'});
         }
         if (response && !response.ok) alert(await response.text());
         refresh();

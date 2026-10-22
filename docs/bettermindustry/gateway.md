@@ -65,6 +65,31 @@ X-BM-Client-Id: <client-id>
 - 切换客户端 Focus 会清除该客户端旧 Focus 的控制权。
 - Render v2 帧包含当前 `controlOwnerId`。
 
+## 输入授权
+
+当前提供一个低风险的测试输入：
+
+```text
+POST /api/gateway/input/status/{sectorId}
+```
+
+它只会向目标 Worker 发送固定命令 `status`，用于验证完整控制链。
+
+允许执行必须同时满足：
+
+- 请求带有效 Client ID。
+- Sector 是该 Client 当前的 Focus。
+- 该 Client 持有这个 Sector 的有效控制租约。
+
+结果：
+
+- 无租约：403。
+- 观察者：403。
+- Focus 不匹配：403。
+- 租约持有者：200，并实际向 Worker 发送 `status`。
+
+当前不开放移动、建造或任意服务端命令；这些能力必须经过同一授权函数和后续输入验证。
+
 状态保存在：
 
 ```text
@@ -124,7 +149,7 @@ POST /api/gateway/views/sector-a/SUMMARY
 ## 限制
 
 - 当前是 Web 调试客户端，不是最终 Mindustry 桌面客户端。
-- 还没有真正的玩家输入路由；控制租约目前只是权限边界。
+- 输入路由目前只开放固定 `status` 测试命令，尚未接入移动、建造或任意服务端命令。
 - 客户端 ID 尚未绑定真正的用户认证。
 - 还没有跨 Sector 传送。
 - 采样策略是固定配置，尚未支持按客户端带宽动态调整。

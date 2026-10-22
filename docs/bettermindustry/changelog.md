@@ -24,6 +24,7 @@
 - Gateway Focus/ViewMode 持久化和按视口模式采样节流。
 - Gateway Focus 控制权租约、竞争拒绝、自动续约和过期。
 - 多 Client Session、独立 Focus/ViewMode 和有效视口合并。
+- Focus 控制租约接入首个授权输入端点。
 
 ### Next
 
