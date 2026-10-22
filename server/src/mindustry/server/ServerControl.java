@@ -733,6 +733,60 @@ public class ServerControl implements ApplicationListener{
             info("BMWORLD @", state.tick);
         });
 
+        handler.register("bmaction", "<commandId> <type> [message...]", "Execute a BetterMindustry managed action and acknowledge it.", arg -> {
+            String commandId = arg[0];
+            if(!commandId.matches("[A-Za-z0-9_-]{1,96}")){
+                err("Invalid BetterMindustry command ID.");
+                return;
+            }
+
+            String type = arg[1];
+            String status = "APPLIED";
+            String detail = type;
+            switch(type){
+                case "status" -> {
+                    // Read-only action used to prove the acknowledgement channel is live.
+                }
+                case "pause", "resume" -> {
+                    if(state.isMenu()){
+                        status = "FAILED";
+                        detail = "Cannot pause without a game running.";
+                    }else{
+                        boolean pause = type.equals("pause");
+                        autoPaused = false;
+                        state.set(pause ? State.paused : State.playing);
+                        detail = pause ? "Game paused." : "Game unpaused.";
+                    }
+                }
+                case "chat" -> {
+                    if(arg.length < 3 || arg[2].isBlank() || arg[2].codePointCount(0, arg[2].length()) > 150){
+                        status = "FAILED";
+                        detail = "Chat message must contain 1-150 characters.";
+                    }else if(!state.isGame()){
+                        status = "FAILED";
+                        detail = "Not hosting. Host a game first.";
+                    }else{
+                        Call.sendMessage("[scarlet][[Server]:[] " + arg[2]);
+                        detail = "Chat sent.";
+                    }
+                }
+                default -> {
+                    status = "FAILED";
+                    detail = "Unknown BetterMindustry action.";
+                }
+            }
+
+            String json = "{"
+                + "\"protocolVersion\":1"
+                + ",\"commandId\":\"" + commandId + "\""
+                + ",\"status\":\"" + status + "\""
+                + ",\"tick\":" + state.tick
+                + ",\"paused\":" + state.isPaused()
+                + ",\"detail\":\"" + detail.replace("\\", "\\\\").replace("\"", "\\\"").replace("@", "\\u0040") + "\""
+                + "}";
+            info("BMACTION @", json);
+        });
+
         handler.register("mods", "Display all loaded mods.", arg -> {
             if(!mods.list().isEmpty()){
                 info("Mods:");
