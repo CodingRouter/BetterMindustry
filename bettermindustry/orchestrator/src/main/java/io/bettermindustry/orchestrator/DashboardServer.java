@@ -10,6 +10,7 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.net.URLDecoder;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -75,6 +76,7 @@ public class DashboardServer {
             send(exchange, 405, "Method not allowed", "text/plain; charset=utf-8");
             return;
         }
+        String clientId = clientId(exchange);
         StringBuilder json = new StringBuilder();
         json.append('{');
         json.append("\"service\":\"bettermindustry-debugger\",");
@@ -86,14 +88,14 @@ public class DashboardServer {
         json.append("\"renderTick\":\"planned separate process\",");
         json.append("\"transport\":\"not implemented\"},");
         json.append("\"gateway\":");
-        appendGateway(json);
+        appendGateway(json, clientId);
         json.append(',');
         json.append("\"workers\":[");
         Collection<ManagedWorker> workers = manager.workers();
         int index = 0;
         for (ManagedWorker worker : workers) {
             if (index++ > 0) json.append(',');
-            appendSnapshot(json, worker);
+            appendSnapshot(json, worker, clientId);
         }
         json.append("]}");
         send(exchange, 200, json.toString(), "application/json; charset=utf-8");
@@ -104,7 +106,7 @@ public class DashboardServer {
             send(exchange, 405, "Method not allowed", "text/plain; charset=utf-8");
             return;
         }
-        send(exchange, 200, createRenderFrame().toJson(), "application/json; charset=utf-8");
+        send(exchange, 200, createRenderFrame(clientId(exchange)).toJson(), "application/json; charset=utf-8");
     }
 
     private void renderStream(HttpExchange exchange) {
@@ -119,11 +121,12 @@ public class DashboardServer {
         exchange.getResponseHeaders().set("Content-Type", "text/event-stream; charset=utf-8");
         exchange.getResponseHeaders().set("Cache-Control", "no-store");
         exchange.getResponseHeaders().set("Connection", "keep-alive");
+        String clientId = clientId(exchange);
         try {
             exchange.sendResponseHeaders(200, 0);
             try (OutputStream out = exchange.getResponseBody()) {
                 while (!Thread.currentThread().isInterrupted()) {
-                    RenderFrame frame = createRenderFrame();
+                    RenderFrame frame = createRenderFrame(clientId);
                     String event = "event: render\nid: " + frame.sequence()
                         + "\ndata: " + frame.toJson() + "\n\n";
                     out.write(event.getBytes(StandardCharsets.UTF_8));
@@ -140,8 +143,8 @@ public class DashboardServer {
         }
     }
 
-    private RenderFrame createRenderFrame() {
-        Gateway.Snapshot gatewayState = gateway.snapshot();
+    private RenderFrame createRenderFrame(String clientId) {
+        Gateway.Snapshot gatewayState = gateway.snapshot(clientId);
         List<RenderFrame.SectorFrame> sectors = new ArrayList<>();
         for (ManagedWorker worker : manager.workers()) {
             ManagedWorker.Snapshot snapshot = worker.snapshot();
@@ -176,6 +179,7 @@ public class DashboardServer {
             RenderFrame.VERSION,
             renderSequence.incrementAndGet(),
             System.currentTimeMillis(),
+            gatewayState.clientId(),
             gatewayState.focusSectorId(),
             gatewayState.controlOwnerId(),
             sectors
@@ -187,8 +191,9 @@ public class DashboardServer {
             send(exchange, 405, "Method not allowed", "text/plain; charset=utf-8");
             return;
         }
+        String clientId = clientId(exchange);
         StringBuilder json = new StringBuilder();
-        appendGateway(json);
+        appendGateway(json, clientId);
         send(exchange, 200, json.toString(), "application/json; charset=utf-8");
     }
 
@@ -203,9 +208,10 @@ public class DashboardServer {
             return;
         }
         try {
-            gateway.setFocus(parts[4]);
+            String clientId = clientId(exchange);
+            gateway.setFocus(clientId, parts[4]);
             StringBuilder json = new StringBuilder();
-            appendGateway(json);
+            appendGateway(json, clientId);
             send(exchange, 200, json.toString(), "application/json; charset=utf-8");
         } catch (IllegalArgumentException e) {
             send(exchange, 400, e.getMessage(), "text/plain; charset=utf-8");
@@ -223,9 +229,10 @@ public class DashboardServer {
             return;
         }
         try {
-            gateway.setViewMode(parts[4], ViewMode.parse(parts[5]));
+            String clientId = clientId(exchange);
+            gateway.setViewMode(clientId, parts[4], ViewMode.parse(parts[5]));
             StringBuilder json = new StringBuilder();
-            appendGateway(json);
+            appendGateway(json, clientId);
             send(exchange, 200, json.toString(), "application/json; charset=utf-8");
         } catch (IllegalArgumentException e) {
             send(exchange, 400, e.getMessage(), "text/plain; charset=utf-8");
@@ -242,11 +249,11 @@ public class DashboardServer {
             send(exchange, 400, "Control action requires action and sector id", "text/plain; charset=utf-8");
             return;
         }
-        String clientId = exchange.getRequestHeaders().getFirst("X-BM-Client-Id");
+        String clientId = clientId(exchange);
         try {
             Gateway.Snapshot state = switch (parts[4]) {
-                case "acquire", "renew" -> gateway.acquireControl(parts[5], clientId);
-                case "release" -> gateway.releaseControl(parts[5], clientId);
+                case "acquire", "renew" -> gateway.acquireControl(clientId, parts[5]);
+                case "release" -> gateway.releaseControl(clientId, parts[5]);
                 default -> throw new IllegalArgumentException("unknown control action: " + parts[4]);
             };
             StringBuilder json = new StringBuilder();
@@ -259,12 +266,13 @@ public class DashboardServer {
         }
     }
 
-    private void appendGateway(StringBuilder json) {
-        appendGateway(json, gateway.snapshot());
+    private void appendGateway(StringBuilder json, String clientId) {
+        appendGateway(json, gateway.snapshot(clientId));
     }
 
     private void appendGateway(StringBuilder json, Gateway.Snapshot state) {
         json.append('{');
+        json.append("\"clientId\":\"").append(escape(state.clientId())).append("\",");
         json.append("\"focusSectorId\":\"").append(escape(state.focusSectorId())).append("\",");
         json.append("\"stateFile\":\"").append(escape(gateway.stateFile().toString())).append("\",");
         json.append("\"controlOwnerId\":");
@@ -279,6 +287,13 @@ public class DashboardServer {
         json.append("\"views\":{");
         int index = 0;
         for (Map.Entry<String, ViewMode> entry : state.views().entrySet()) {
+            if (index++ > 0) json.append(',');
+            json.append('"').append(escape(entry.getKey())).append("\":\"")
+                .append(entry.getValue().name()).append('"');
+        }
+        json.append("},\"effectiveViews\":{");
+        index = 0;
+        for (Map.Entry<String, ViewMode> entry : state.effectiveViews().entrySet()) {
             if (index++ > 0) json.append(',');
             json.append('"').append(escape(entry.getKey())).append("\":\"")
                 .append(entry.getValue().name()).append('"');
@@ -361,7 +376,7 @@ public class DashboardServer {
         send(exchange, 200, "{\"ok\":true}", "application/json; charset=utf-8");
     }
 
-    private void appendSnapshot(StringBuilder json, ManagedWorker worker) {
+    private void appendSnapshot(StringBuilder json, ManagedWorker worker, String clientId) {
         ManagedWorker.Snapshot snapshot = worker.snapshot();
         json.append('{');
         json.append("\"id\":\"").append(escape(snapshot.id())).append("\",");
@@ -375,7 +390,7 @@ public class DashboardServer {
         json.append("\"exitCode\":").append(snapshot.exitCode() == null ? "null" : snapshot.exitCode()).append(',');
         json.append("\"portOpen\":").append(snapshot.portOpen()).append(',');
         json.append("\"checkpoint\":").append(snapshot.checkpoint()).append(',');
-        json.append("\"viewMode\":\"").append(gateway.viewMode(snapshot.id()).name()).append("\",");
+        json.append("\"viewMode\":\"").append(gateway.viewMode(clientId, snapshot.id()).name()).append("\",");
         json.append("\"diagnostics\":");
         ManagedWorker.Diagnostics diagnostics = snapshot.diagnostics();
         if (diagnostics == null) {
@@ -431,6 +446,23 @@ public class DashboardServer {
 
     private static String readBody(HttpExchange exchange) throws IOException {
         return new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8).trim();
+    }
+
+    private static String clientId(HttpExchange exchange) {
+        String header = exchange.getRequestHeaders().getFirst("X-BM-Client-Id");
+        if (header != null && !header.isBlank()) return header.trim();
+
+        String query = exchange.getRequestURI().getQuery();
+        if (query != null) {
+            for (String item : query.split("&")) {
+                int split = item.indexOf('=');
+                if (split > 0 && "clientId".equals(item.substring(0, split))) {
+                    String value = URLDecoder.decode(item.substring(split + 1), StandardCharsets.UTF_8);
+                    if (!value.isBlank()) return value;
+                }
+            }
+        }
+        return "local-debugger";
     }
 
     private static void send(HttpExchange exchange, int status, String body, String contentType) throws IOException {

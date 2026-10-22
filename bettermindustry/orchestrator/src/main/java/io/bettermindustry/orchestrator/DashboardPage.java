@@ -294,7 +294,7 @@ public final class DashboardPage {
       requestAnimationFrame(animate);
     }
     requestAnimationFrame(animate);
-    const renderStream = new EventSource('/api/render/stream');
+    const renderStream = new EventSource('/api/render/stream?clientId=' + encodeURIComponent(clientId));
     renderStream.addEventListener('render', event => {
       renderConnected = true;
       renderFrames++;

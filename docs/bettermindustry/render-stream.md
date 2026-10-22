@@ -40,6 +40,7 @@ Content-Type: text/event-stream
   "protocolVersion": 2,
   "sequence": 12,
   "renderTimeMillis": 1792638436685,
+  "clientId": "client-a",
   "focusSectorId": "sector-a",
   "controlOwnerId": "client-a",
   "authoritative": false,

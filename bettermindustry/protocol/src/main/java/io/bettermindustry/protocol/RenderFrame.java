@@ -6,6 +6,7 @@ public record RenderFrame(
     int protocolVersion,
     long sequence,
     long renderTimeMillis,
+    String clientId,
     String focusSectorId,
     String controlOwnerId,
     List<SectorFrame> sectors
@@ -23,6 +24,7 @@ public record RenderFrame(
         json.append("\"protocolVersion\":").append(protocolVersion).append(',');
         json.append("\"sequence\":").append(sequence).append(',');
         json.append("\"renderTimeMillis\":").append(renderTimeMillis).append(',');
+        json.append("\"clientId\":\"").append(escape(clientId)).append("\",");
         json.append("\"focusSectorId\":\"").append(escape(focusSectorId)).append("\",");
         json.append("\"controlOwnerId\":");
         if (controlOwnerId == null) json.append("null");

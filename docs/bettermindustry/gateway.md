@@ -4,10 +4,10 @@
 
 Gateway 是客户端和多个 Sector Worker 之间的控制边界，当前维护：
 
-- 唯一 `focusSectorId`。
-- 每个 Sector 的视口模式。
+- 每个 Client Session 自己的 `focusSectorId`。
+- 每个 Session 对每个 Sector 的视口模式。
 - 多 WorldView 的订阅状态。
-- 持久化的 Focus 和视口状态。
+- 持久化的 Session、Focus 和视口状态。
 - Focus Sector 的控制权租约。
 
 视口模式：
@@ -18,11 +18,28 @@ Gateway 是客户端和多个 Sector Worker 之间的控制边界，当前维护
 | `SUMMARY` | 缩小并降低视觉权重 |
 | `OFF` | 关闭视口 |
 
-Focus Sector 必须是已配置的 Worker，并且不能被设为 OFF。
+每个 Session 的 Focus Sector 必须是已配置的 Worker，并且不能被该 Session 设为 OFF。
+
+## Client Session
+
+HTTP 请求使用客户端 ID 区分 Session：
+
+```http
+X-BM-Client-Id: <client-id>
+```
+
+SSE 使用查询参数：
+
+```text
+/api/render/stream?clientId=<client-id>
+```
+
+每个 Session 保存自己的 Focus 和 WorldView 模式。Gateway 会合并所有 Session 的需求，
+实际采样策略按 `FULL > SUMMARY > OFF` 取最高优先级。
 
 ## 控制权租约
 
-观察可以多人同时进行，但同一个 Focus Sector 同时只有一个控制者。
+观察可以多人同时进行，但同一个 Sector 同时只有一个控制者。
 
 ```text
 POST /api/gateway/control/acquire/{sectorId}
@@ -38,13 +55,14 @@ X-BM-Client-Id: <client-id>
 
 规则：
 
-- 只有 Focus Sector 可以申请控制权。
+- 客户端只能为自己的 Focus Sector 申请控制权。
+- 不同客户端可以同时控制不同 Sector。
 - 租约有效期 15 秒。
 - 同一 Client ID 可以续约。
 - 其他 Client ID 在租约有效时获得 HTTP 409。
 - 获取者可主动释放。
 - 租约过期后自动变为空闲。
-- 切换 Focus 会清除旧 Focus 的控制权。
+- 切换客户端 Focus 会清除该客户端旧 Focus 的控制权。
 - Render v2 帧包含当前 `controlOwnerId`。
 
 状态保存在：
@@ -53,7 +71,7 @@ X-BM-Client-Id: <client-id>
 bettermindustry/runtime/gateway.properties
 ```
 
-重启 Orchestrator 后会恢复 Focus 和所有 ViewMode。
+重启 Orchestrator 后会恢复所有已保存 Session 的 Focus 和 ViewMode。
 
 ## 采样频率
 
@@ -87,6 +105,7 @@ POST /api/gateway/views/sector-a/SUMMARY
 协议已升级为 `bettermindustry.render.v2`：
 
 - 顶层包含 `focusSectorId`。
+- 顶层包含请求帧的 `clientId`。
 - 每个 Sector 包含 `viewMode`。
 - 帧仍然只读，`authoritative=false`。
 
@@ -106,5 +125,6 @@ POST /api/gateway/views/sector-a/SUMMARY
 
 - 当前是 Web 调试客户端，不是最终 Mindustry 桌面客户端。
 - 还没有真正的玩家输入路由；控制租约目前只是权限边界。
-- 还没有用户认证和跨 Sector 传送。
+- 客户端 ID 尚未绑定真正的用户认证。
+- 还没有跨 Sector 传送。
 - 采样策略是固定配置，尚未支持按客户端带宽动态调整。
