@@ -57,7 +57,29 @@ public class DashboardServer {
             send(exchange, 404, "Not found", "text/plain; charset=utf-8");
             return;
         }
-        send(exchange, 200, DashboardPage.html(), "text/html; charset=utf-8");
+        send(exchange, 200, DashboardPage.html(buildServerPreviews()), "text/html; charset=utf-8");
+    }
+
+    private String buildServerPreviews() {
+        StringBuilder html = new StringBuilder();
+        for (ManagedWorker worker : manager.workers()) {
+            html.append("<figure class=\"raw-preview\">");
+            Path image = worker.config().worldImage();
+            try {
+                if (Files.isRegularFile(image) && Files.size(image) < 2_000_000) {
+                    String encoded = Base64.getEncoder().encodeToString(Files.readAllBytes(image));
+                    html.append("<img src=\"data:image/png;base64,").append(encoded).append("\" alt=\"")
+                        .append(escapeHtml(worker.config().id())).append(" server map preview\">");
+                } else {
+                    html.append("<div>Map snapshot pending</div>");
+                }
+            } catch (IOException e) {
+                html.append("<div>Map snapshot unavailable</div>");
+            }
+            html.append("<div>").append(escapeHtml(worker.config().id())).append(" · ")
+                .append(escapeHtml(worker.config().map())).append("</div></figure>");
+        }
+        return html.toString();
     }
 
     private void overview(HttpExchange exchange) throws IOException {
@@ -334,6 +356,14 @@ public class DashboardServer {
             .replace("\r", "\\r")
             .replace("\n", "\\n")
             .replace("\t", "\\t");
+    }
+
+    private static String escapeHtml(String value) {
+        if (value == null) return "";
+        return value.replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace("\"", "&quot;");
     }
 
     @FunctionalInterface

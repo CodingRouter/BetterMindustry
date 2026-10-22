@@ -4,7 +4,7 @@ public final class DashboardPage {
     private DashboardPage() {
     }
 
-    public static String html() {
+    public static String html(String serverPreviews) {
         return """
 <!doctype html>
 <html lang="zh-CN">
@@ -28,6 +28,11 @@ public final class DashboardPage {
     .pipe-node { padding:9px 13px; border:1px solid #2b4c69; border-radius:8px; background:#122538; }
     .pipe-arrow { color:var(--accent); font-size:20px; }
     .pipe-note { color:var(--muted); }
+    .raw-previews { margin:18px 30px 0; display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:14px; }
+    .raw-title { grid-column:1/-1; color:var(--muted); font-size:12px; letter-spacing:.08em; text-transform:uppercase; }
+    .raw-preview { margin:0; background:#071019; border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+    .raw-preview img { display:block; width:100%; height:210px; object-fit:contain; image-rendering:pixelated; background:#05090d; }
+    .raw-preview div { padding:8px 11px; color:var(--muted); }
     main { padding:20px 30px 30px; display:grid; grid-template-columns:repeat(auto-fit,minmax(380px,1fr)); gap:18px; }
     .worker { min-width:0; background:linear-gradient(150deg,#142232,#0e1721); border:1px solid var(--line); border-radius:13px; overflow:hidden; box-shadow:0 16px 40px #0005; }
     .worker-head { padding:16px 18px; display:flex; justify-content:space-between; gap:15px; border-bottom:1px solid var(--line); }
@@ -57,6 +62,10 @@ public final class DashboardPage {
     <span class="pipe-arrow">→</span>
     <span class="pipe-node">Render Tick<br><small id="render-pipe-status">正在连接快照流…</small></span>
     <span class="pipe-note">浏览器是独立渲染进程：以自身帧率消费只读 Game Tick 快照，不回写权威世界。</span>
+  </section>
+  <section class="raw-previews">
+    <div class="raw-title">Server-rendered map previews</div>
+    <!--SERVER_PREVIEWS-->
   </section>
   <main id="workers"></main>
   <div class="footer">本地控制面板 · 仅监听 127.0.0.1 · 命令和日志来自真实 Server Worker</div>
@@ -93,7 +102,7 @@ public final class DashboardPage {
 
       const meta = document.createElement('div');
       meta.className = 'meta';
-      [['进程 PID','pid'],['运行时长','uptime'],['退出码','exit'],['端口监听','portOpen'],['Game Tick','tick'],['游戏时间','gameTime'],['波次','wave'],['单位 / 建筑','entities'],['暂停','paused'],['世界快照','world'],['检查点','checkpoint'],['工作目录','runtime']].forEach(([label, field]) => {
+      [['进程 PID','pid'],['运行时长','uptime'],['退出码','exit'],['端口监听','portOpen'],['Game Tick','tick'],['游戏时间','gameTime'],['波次','wave'],['单位 / 建筑','entities'],['暂停','paused'],['世界快照','worldAge'],['检查点','checkpoint'],['工作目录','runtime']].forEach(([label, field]) => {
         const key = document.createElement('span');
         key.textContent = label;
         const value = document.createElement('strong');
@@ -105,7 +114,7 @@ public final class DashboardPage {
 
       const world = document.createElement('img');
       world.className = 'world-preview';
-      world.dataset.field = 'world';
+      world.dataset.field = 'worldImage';
       world.alt = worker.id + ' map preview';
       article.append(world);
 
@@ -155,10 +164,10 @@ public final class DashboardPage {
           set(card, 'wave', w.diagnostics ? w.diagnostics.wave : '-');
           set(card, 'entities', w.diagnostics ? w.diagnostics.units + ' / ' + w.diagnostics.buildings : '-');
           set(card, 'paused', w.diagnostics ? (w.diagnostics.paused ? 'yes' : 'no') : '-');
-          set(card, 'world', w.worldDataAvailable ? (w.worldSnapshotAgeMillis >= 0 ? Math.ceil(w.worldSnapshotAgeMillis / 1000) + 's' : 'ready') : 'waiting');
+          set(card, 'worldAge', w.worldDataAvailable ? (w.worldSnapshotAgeMillis >= 0 ? Math.ceil(w.worldSnapshotAgeMillis / 1000) + 's' : 'ready') : 'waiting');
           set(card, 'checkpoint', w.checkpoint ? 'available' : 'none');
           set(card, 'runtime', w.runtimeDir);
-          const preview = card.querySelector('[data-field="world"]');
+          const preview = card.querySelector('[data-field="worldImage"]');
           if (w.worldDataAvailable && w.worldImageDataUrl && worldVersions.get(w.id) !== w.worldSnapshotVersion) {
             worldVersions.set(w.id, w.worldSnapshotVersion);
             preview.onerror = () => worldVersions.delete(w.id);
@@ -232,6 +241,6 @@ public final class DashboardPage {
   </script>
 </body>
 </html>
-""";
+""".replace("<!--SERVER_PREVIEWS-->", serverPreviews == null ? "" : serverPreviews);
     }
 }
