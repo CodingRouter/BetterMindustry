@@ -15,6 +15,11 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -25,10 +30,13 @@ public class ManagedWorker {
 
     private static final int MAX_LOG_LINES = 240;
     private static final String CHECKPOINT_NAME = "debugger-checkpoint";
+    private static final long ACTION_TIMEOUT_MILLIS = 3_000L;
 
     private final WorkerConfig config;
     private final Path serverJar;
     private final List<String> logs = Collections.synchronizedList(new ArrayList<>());
+    private final ConcurrentHashMap<String, CompletableFuture<WorkerActionAck>> pendingActions =
+        new ConcurrentHashMap<>();
 
     private volatile Process process;
     private volatile State state = State.STOPPED;
@@ -102,6 +110,7 @@ public class ManagedWorker {
             lastWorldRequestNanos = 0;
             worldSnapshotUpdatedNanos = 0;
             worldSnapshotTick = -1;
+            failPendingActions("Worker restarted");
             state = State.STARTING;
             startedAt = Instant.now();
 
@@ -176,6 +185,52 @@ public class ManagedWorker {
         }
     }
 
+    public ActionResult executeAction(String commandId, String type, String message) {
+        if (commandId == null || !commandId.matches("[A-Za-z0-9_-]{1,96}")) {
+            return ActionResult.failed("Invalid command ID");
+        }
+        if (type == null || !type.matches("[a-z]+")) {
+            return ActionResult.failed("Invalid action type");
+        }
+        if (process == null || !process.isAlive()) {
+            return ActionResult.failed("Worker " + config.id() + " is not running");
+        }
+
+        CompletableFuture<WorkerActionAck> future = new CompletableFuture<>();
+        if (pendingActions.putIfAbsent(commandId, future) != null) {
+            return ActionResult.failed("Action is already pending");
+        }
+
+        String command = "bmaction " + commandId + " " + type;
+        if (message != null && !message.isBlank()) {
+            command += " " + message;
+        }
+        String sent = sendCommand(command);
+        if (!"Sent".equals(sent)) {
+            pendingActions.remove(commandId, future);
+            return ActionResult.failed(sent);
+        }
+
+        try {
+            WorkerActionAck ack = future.get(ACTION_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS);
+            boolean applied = ack.status() == WorkerActionAck.Status.APPLIED;
+            return new ActionResult(applied, ack.detail(), ack);
+        } catch (TimeoutException e) {
+            pendingActions.remove(commandId, future);
+            return ActionResult.failed("Worker action acknowledgement timed out");
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            pendingActions.remove(commandId, future);
+            return ActionResult.failed("Worker action interrupted");
+        } catch (ExecutionException e) {
+            pendingActions.remove(commandId, future);
+            return ActionResult.failed("Worker action failed: " + e.getCause());
+        } catch (RuntimeException e) {
+            pendingActions.remove(commandId, future);
+            return ActionResult.failed("Worker action failed: " + e.getMessage());
+        }
+    }
+
     public Snapshot snapshot() {
         requestDiagnosticsIfDue();
         requestWorldSnapshotIfDue();
@@ -238,6 +293,11 @@ public class ManagedWorker {
                     updateWorldSnapshot(clean.substring(worldStart + "BMWORLD ".length()));
                     continue;
                 }
+                int actionStart = clean.indexOf("BMACTION ");
+                if (actionStart >= 0) {
+                    updateActionAck(clean.substring(actionStart + "BMACTION ".length()));
+                    continue;
+                }
                 addLog(clean);
                 if (!startupSent && clean.contains("Server loaded.")) {
                     startupSent = true;
@@ -249,6 +309,20 @@ public class ManagedWorker {
             }
         } catch (IOException e) {
             addLog("Output reader stopped: " + e.getMessage());
+        }
+    }
+
+    private void updateActionAck(String json) {
+        try {
+            WorkerActionAck ack = WorkerActionAck.parse(json);
+            CompletableFuture<WorkerActionAck> future = pendingActions.remove(ack.commandId());
+            if (future == null) {
+                addLog("Unexpected action acknowledgement: " + ack.commandId());
+            } else {
+                future.complete(ack);
+            }
+        } catch (RuntimeException e) {
+            addLog("Failed to parse bmaction: " + e.getMessage());
         }
     }
 
@@ -336,6 +410,7 @@ public class ManagedWorker {
                     portOpen = false;
                     addLog("Worker exited unexpectedly with code " + code);
                 }
+                failPendingActions("Worker exited before action acknowledgement");
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -346,6 +421,23 @@ public class ManagedWorker {
         synchronized (logs) {
             logs.add(line);
             while (logs.size() > MAX_LOG_LINES) logs.remove(0);
+        }
+    }
+
+    private void failPendingActions(String detail) {
+        for (String commandId : new ArrayList<>(pendingActions.keySet())) {
+            CompletableFuture<WorkerActionAck> future = pendingActions.remove(commandId);
+            if (future != null) {
+                future.complete(new WorkerActionAck(
+                    WorkerActionAck.VERSION,
+                    commandId,
+                    WorkerActionAck.Status.FAILED,
+                    diagnostics == null ? 0 : diagnostics.tick(),
+                    diagnostics != null && diagnostics.paused(),
+                    detail,
+                    Instant.now()
+                ));
+            }
         }
     }
 
@@ -445,5 +537,11 @@ public class ManagedWorker {
         String map,
         Instant receivedAt
     ) {
+    }
+
+    public record ActionResult(boolean applied, String detail, WorkerActionAck acknowledgement) {
+        static ActionResult failed(String detail) {
+            return new ActionResult(false, detail, null);
+        }
     }
 }

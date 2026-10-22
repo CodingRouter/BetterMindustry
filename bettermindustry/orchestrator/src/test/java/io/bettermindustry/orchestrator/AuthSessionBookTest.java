@@ -58,7 +58,7 @@ class AuthSessionBookTest {
     @Test
     void persistsAccountUsernameBindingWithSession() {
         AuthSessionBook original = new AuthSessionBook();
-        AuthSessionBook.Issued issued = original.issue("captain", 1_000);
+        AuthSessionBook.Issued issued = original.issue("captain", "Browser A", 1_000);
         Properties properties = new Properties();
         original.write(properties);
 
@@ -68,6 +68,8 @@ class AuthSessionBookTest {
 
         assertNotNull(authenticated);
         assertEquals("captain", authenticated.username());
+        assertEquals("Browser A", authenticated.label());
+        assertEquals(1, restored.sessionsFor("captain", 2_001).size());
     }
 
     @Test

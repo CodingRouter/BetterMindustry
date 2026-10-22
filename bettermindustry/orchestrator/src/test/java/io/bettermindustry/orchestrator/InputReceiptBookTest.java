@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import java.util.Properties;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -18,13 +19,15 @@ class InputReceiptBookTest {
         InputReceiptBook book = new InputReceiptBook();
         InputEnvelope envelope = envelope("command-1", InputCommandType.PAUSE, "");
         book.begin("client-a", envelope, 1_000);
-        book.complete("command-1", InputReceiptBook.Status.APPLIED, "on", 1_100);
+        book.complete("command-1", InputReceiptBook.Status.APPLIED, "on", 42.5, true, 1_100);
 
         InputReceiptBook.Admission duplicate = book.begin("client-a", envelope, 1_200);
 
         assertTrue(duplicate.duplicate());
         assertEquals(InputReceiptBook.Status.APPLIED, duplicate.receipt().status());
         assertEquals("on", duplicate.receipt().detail());
+        assertEquals(42.5, duplicate.receipt().acknowledgementTick());
+        assertTrue(duplicate.receipt().acknowledgementPaused());
         assertEquals(1_100, duplicate.receipt().updatedAtMillis());
     }
 
@@ -50,7 +53,7 @@ class InputReceiptBookTest {
         InputReceiptBook original = new InputReceiptBook();
         InputEnvelope envelope = envelope("command-3", InputCommandType.CHAT, "hello");
         original.begin("client-a", envelope, 1_000);
-        original.complete("command-3", InputReceiptBook.Status.APPLIED, "hello", 1_100);
+        original.complete("command-3", InputReceiptBook.Status.APPLIED, "hello", 11, false, 1_100);
 
         Properties properties = new Properties();
         original.write(properties);
@@ -62,6 +65,8 @@ class InputReceiptBookTest {
         assertTrue(duplicate.duplicate());
         assertEquals(InputReceiptBook.Status.APPLIED, duplicate.receipt().status());
         assertEquals("hello", duplicate.receipt().detail());
+        assertEquals(11, duplicate.receipt().acknowledgementTick());
+        assertFalse(duplicate.receipt().acknowledgementPaused());
     }
 
     @Test

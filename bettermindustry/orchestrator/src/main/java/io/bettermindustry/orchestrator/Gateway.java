@@ -48,7 +48,15 @@ public final class Gateway {
     }
 
     synchronized AuthSessionBook.Issued issueSession() {
-        AuthSessionBook.Issued issued = authSessions.issue(System.currentTimeMillis());
+        return issueSession("Unknown device");
+    }
+
+    synchronized AuthSessionBook.Issued issueSession(String label) {
+        AuthSessionBook.Issued issued = authSessions.issue(
+            null,
+            label,
+            System.currentTimeMillis()
+        );
         ensureSession(issued.session().clientId());
         applyPolicies();
         persist();
@@ -56,10 +64,19 @@ public final class Gateway {
     }
 
     synchronized AuthSessionBook.Issued loginSession(String username, String password) {
+        return loginSession(username, password, "Unknown device");
+    }
+
+    synchronized AuthSessionBook.Issued loginSession(
+        String username,
+        String password,
+        String label
+    ) {
         AccountBook.AccountView account = accounts.authenticate(username, password);
         if (account == null) return null;
         AuthSessionBook.Issued issued = authSessions.issue(
             account.username(),
+            label,
             System.currentTimeMillis()
         );
         ensureSession(issued.session().clientId());
@@ -100,6 +117,48 @@ public final class Gateway {
         applyPolicies();
         persist();
         return clientId;
+    }
+
+    synchronized List<SessionSummary> accountSessions(Identity identity) {
+        if (identity.username() == null) return List.of();
+        long now = System.currentTimeMillis();
+        return authSessions.sessionsFor(identity.username(), now).stream()
+            .map(session -> sessionSummary(session, identity.clientId(), now))
+            .toList();
+    }
+
+    synchronized List<SessionSummary> allSessions(Identity identity) {
+        if (identity.role() != Role.ADMIN) return List.of();
+        long now = System.currentTimeMillis();
+        return authSessions.allSessions(now).stream()
+            .map(session -> sessionSummary(session, identity.clientId(), now))
+            .toList();
+    }
+
+    synchronized boolean revokeAccountSession(Identity identity, String clientId) {
+        if (identity.username() == null || clientId == null) return false;
+        AuthSessionBook.Session target = authSessions.findClient(
+            clientId,
+            System.currentTimeMillis()
+        );
+        if (target == null || !identity.username().equals(target.username())) return false;
+        return revokeClientSession(clientId);
+    }
+
+    synchronized int revokeOtherSessions(Identity identity) {
+        if (identity.username() == null) return 0;
+        long now = System.currentTimeMillis();
+        int revoked = 0;
+        for (AuthSessionBook.Session session : authSessions.sessionsFor(identity.username(), now)) {
+            if (session.clientId().equals(identity.clientId())) continue;
+            if (revokeClientSession(session.clientId())) revoked++;
+        }
+        return revoked;
+    }
+
+    synchronized boolean revokeAdminSession(Identity identity, String clientId) {
+        if (identity.role() != Role.ADMIN || clientId == null) return false;
+        return revokeClientSession(clientId);
     }
 
     public synchronized String focusSectorId(String clientId) {
@@ -237,12 +296,15 @@ public final class Gateway {
     synchronized InputReceiptBook.Receipt completeInput(
         String commandId,
         InputReceiptBook.Status status,
-        String detail
+        String detail,
+        WorkerActionAck acknowledgement
     ) {
         InputReceiptBook.Receipt updated = inputReceipts.complete(
             commandId,
             status,
             detail,
+            acknowledgement == null ? -1 : acknowledgement.tick(),
+            acknowledgement == null ? null : acknowledgement.paused(),
             System.currentTimeMillis()
         );
         if (updated != null) persist();
@@ -384,6 +446,37 @@ public final class Gateway {
         }
     }
 
+    private boolean revokeClientSession(String clientId) {
+        AuthSessionBook.Session removed = authSessions.revokeClient(clientId);
+        if (removed == null) return false;
+        removeSession(clientId);
+        applyPolicies();
+        persist();
+        return true;
+    }
+
+    private SessionSummary sessionSummary(
+        AuthSessionBook.Session session,
+        String currentClientId,
+        long now
+    ) {
+        Role role = Role.GUEST;
+        if (session.username() != null) {
+            AccountBook.AccountView account = accounts.find(session.username());
+            if (account != null) role = account.role();
+        }
+        return new SessionSummary(
+            session.clientId(),
+            session.username(),
+            role,
+            session.label(),
+            session.createdAtMillis(),
+            session.expiresAtMillis(),
+            session.clientId().equals(currentClientId),
+            Math.max(0, session.expiresAtMillis() - now)
+        );
+    }
+
     private Map<String, ViewMode> effectiveViews() {
         LinkedHashMap<String, ViewMode> result = new LinkedHashMap<>();
         for (ManagedWorker worker : manager.workers()) {
@@ -516,6 +609,18 @@ public final class Gateway {
     }
 
     record Identity(String clientId, String username, Role role, long expiresAtMillis) {
+    }
+
+    record SessionSummary(
+        String clientId,
+        String username,
+        Role role,
+        String label,
+        long createdAtMillis,
+        long expiresAtMillis,
+        boolean current,
+        long expiresInMillis
+    ) {
     }
 
     public record Snapshot(

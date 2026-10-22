@@ -48,6 +48,15 @@
 - PLAYER 才能获取控制与发送输入，ADMIN 才能管理 Worker。
 - 调试器增加登录/注册对话框、身份徽标和角色按钮禁用。
 - Orchestrator 模块加入账户注册、密码验证、持久化和角色测试。
+- 登录失败按地址和用户名实施 5 次/5 分钟限流，超限返回 429 与 `Retry-After`。
+- Session 保存设备 User-Agent 标签，账户可列出并撤销自己的设备 Session。
+- 支持“退出其他设备”和管理员强制撤销任意 Session。
+- 调试器增加设备会话管理窗口和管理员全局 Session 视图。
+- Orchestrator 增加登录限流测试，并扩展 Session 标签与账户绑定测试。
+- Worker 新增带 `commandId` 的 `bmaction` 管理动作和 `BMACTION` 返回确认。
+- Gateway 等到 Worker 确认后才将输入回执标记为 `APPLIED`，3 秒无确认则失败。
+- 输入回执持久化 Worker 确认 Tick 与 paused 状态，重复投递保留原执行现场。
+- ServerControl 限制确认动作仅能使用 `status/pause/resume/chat`。
 
 ### Next
 

@@ -41,6 +41,8 @@ final class InputReceiptBook {
             envelope.message(),
             Status.PENDING,
             "",
+            -1,
+            null,
             now
         );
         receipts.put(receipt.commandId(), receipt);
@@ -48,7 +50,14 @@ final class InputReceiptBook {
         return new Admission(receipt, false);
     }
 
-    Receipt complete(String commandId, Status status, String detail, long now) {
+    Receipt complete(
+        String commandId,
+        Status status,
+        String detail,
+        double acknowledgementTick,
+        Boolean acknowledgementPaused,
+        long now
+    ) {
         if (status == Status.PENDING) {
             throw new IllegalArgumentException("completed input receipt cannot remain pending");
         }
@@ -63,6 +72,8 @@ final class InputReceiptBook {
             receipt.message(),
             status,
             detail == null ? "" : detail,
+            acknowledgementTick,
+            acknowledgementPaused,
             now
         );
         receipts.put(commandId, updated);
@@ -103,6 +114,13 @@ final class InputReceiptBook {
             properties.setProperty(prefix + "message", receipt.message());
             properties.setProperty(prefix + "status", receipt.status().name());
             properties.setProperty(prefix + "detail", receipt.detail());
+            properties.setProperty(prefix + "acknowledgementTick", Double.toString(receipt.acknowledgementTick()));
+            if (receipt.acknowledgementPaused() != null) {
+                properties.setProperty(
+                    prefix + "acknowledgementPaused",
+                    Boolean.toString(receipt.acknowledgementPaused())
+                );
+            }
             properties.setProperty(prefix + "updatedAtMillis", Long.toString(receipt.updatedAtMillis()));
         }
     }
@@ -125,6 +143,11 @@ final class InputReceiptBook {
             InputCommandType type = InputCommandType.parse(required(properties, prefix + "type"));
             Status status = Status.valueOf(required(properties, prefix + "status"));
             String detail = properties.getProperty(prefix + "detail", "");
+            double acknowledgementTick = Double.parseDouble(
+                properties.getProperty(prefix + "acknowledgementTick", "-1")
+            );
+            String pausedValue = properties.getProperty(prefix + "acknowledgementPaused");
+            Boolean acknowledgementPaused = pausedValue == null ? null : Boolean.parseBoolean(pausedValue);
             long updatedAtMillis = Long.parseLong(required(properties, prefix + "updatedAtMillis"));
             if (status == Status.PENDING) {
                 status = Status.FAILED;
@@ -139,6 +162,8 @@ final class InputReceiptBook {
                 properties.getProperty(prefix + "message", ""),
                 status,
                 detail,
+                acknowledgementTick,
+                acknowledgementPaused,
                 updatedAtMillis
             );
         } catch (IllegalArgumentException e) {
@@ -167,6 +192,8 @@ final class InputReceiptBook {
         String message,
         Status status,
         String detail,
+        double acknowledgementTick,
+        Boolean acknowledgementPaused,
         long updatedAtMillis
     ) {
     }

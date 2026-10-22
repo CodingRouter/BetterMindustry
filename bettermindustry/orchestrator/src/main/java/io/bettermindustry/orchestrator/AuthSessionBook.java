@@ -24,16 +24,21 @@ final class AuthSessionBook {
     private final LinkedHashMap<String, String> tokenOwners = new LinkedHashMap<>();
 
     Issued issue(long now) {
-        return issue(null, now);
+        return issue(null, "Unknown device", now);
     }
 
     Issued issue(String username, long now) {
+        return issue(username, "Unknown device", now);
+    }
+
+    Issued issue(String username, String label, long now) {
         prune(now);
         String clientId = "client-" + UUID.randomUUID();
         String token = generateToken();
         Session session = new Session(
             clientId,
             username,
+            normalizeLabel(label),
             hashToken(token),
             now,
             now + SESSION_LIFETIME_MILLIS
@@ -58,12 +63,30 @@ final class AuthSessionBook {
         return session.clientId();
     }
 
-    void revokeClient(String clientId) {
-        remove(clientId);
+    Session revokeClient(String clientId) {
+        prune(System.currentTimeMillis());
+        return remove(clientId);
     }
 
     boolean hasClient(String clientId) {
         return sessions.containsKey(clientId);
+    }
+
+    Session findClient(String clientId, long now) {
+        prune(now);
+        return sessions.get(clientId);
+    }
+
+    List<Session> sessionsFor(String username, long now) {
+        prune(now);
+        return sessions.values().stream()
+            .filter(session -> username != null && username.equals(session.username()))
+            .toList();
+    }
+
+    List<Session> allSessions(long now) {
+        prune(now);
+        return List.copyOf(sessions.values());
     }
 
     void load(Properties properties, long now) {
@@ -94,6 +117,7 @@ final class AuthSessionBook {
         for (Session session : sessions.values()) {
             String prefix = "auth." + session.clientId() + ".";
             properties.setProperty(prefix + "tokenHash", session.tokenHash());
+            properties.setProperty(prefix + "label", session.label());
             if (session.username() != null) {
                 properties.setProperty(prefix + "username", session.username());
             }
@@ -120,9 +144,10 @@ final class AuthSessionBook {
         tokenOwners.put(session.tokenHash(), session.clientId());
     }
 
-    private void remove(String clientId) {
+    private Session remove(String clientId) {
         Session removed = sessions.remove(clientId);
         if (removed != null) tokenOwners.remove(removed.tokenHash());
+        return removed;
     }
 
     private String generateToken() {
@@ -150,6 +175,7 @@ final class AuthSessionBook {
         String prefix = "auth." + clientId + ".";
         try {
             String tokenHash = required(properties, prefix + "tokenHash");
+            String label = normalizeLabel(properties.getProperty(prefix + "label", "Unknown device"));
             String username = properties.getProperty(prefix + "username");
             if (username != null) {
                 username = normalizeUsername(username);
@@ -159,7 +185,7 @@ final class AuthSessionBook {
             if (!tokenHash.matches("[A-Za-z0-9_-]{40,64}") || expiresAtMillis <= createdAtMillis) {
                 return null;
             }
-            return new Session(clientId, username, tokenHash, createdAtMillis, expiresAtMillis);
+            return new Session(clientId, username, label, tokenHash, createdAtMillis, expiresAtMillis);
         } catch (IllegalArgumentException e) {
             return null;
         }
@@ -171,6 +197,18 @@ final class AuthSessionBook {
             throw new IllegalArgumentException("invalid username");
         }
         return value;
+    }
+
+    private static String normalizeLabel(String label) {
+        if (label == null || label.isBlank()) return "Unknown device";
+        String value = label.replaceAll("\\p{Cntrl}", " ")
+            .replaceAll("\\s+", " ")
+            .trim();
+        if (value.isBlank()) return "Unknown device";
+        int codePoints = value.codePointCount(0, value.length());
+        return codePoints > 120
+            ? value.substring(0, value.offsetByCodePoints(0, 120))
+            : value;
     }
 
     private static String required(Properties properties, String key) {
@@ -185,6 +223,7 @@ final class AuthSessionBook {
     record Session(
         String clientId,
         String username,
+        String label,
         String tokenHash,
         long createdAtMillis,
         long expiresAtMillis
