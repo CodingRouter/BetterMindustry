@@ -13,6 +13,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Collection;
 import java.util.List;
 import java.util.concurrent.Executors;
@@ -79,7 +80,7 @@ public class DashboardServer {
         int index = 0;
         for (ManagedWorker worker : workers) {
             if (index++ > 0) json.append(',');
-            appendSnapshot(json, worker.snapshot());
+            appendSnapshot(json, worker);
         }
         json.append("]}");
         send(exchange, 200, json.toString(), "application/json; charset=utf-8");
@@ -239,7 +240,8 @@ public class DashboardServer {
         send(exchange, 200, "{\"ok\":true}", "application/json; charset=utf-8");
     }
 
-    private static void appendSnapshot(StringBuilder json, ManagedWorker.Snapshot snapshot) {
+    private static void appendSnapshot(StringBuilder json, ManagedWorker worker) {
+        ManagedWorker.Snapshot snapshot = worker.snapshot();
         json.append('{');
         json.append("\"id\":\"").append(escape(snapshot.id())).append("\",");
         json.append("\"map\":\"").append(escape(snapshot.map())).append("\",");
@@ -279,6 +281,24 @@ public class DashboardServer {
         json.append("\"worldSnapshotTick\":").append(snapshot.worldSnapshotTick()).append(',');
         json.append("\"worldSnapshotAgeMillis\":").append(snapshot.worldSnapshotAgeMillis()).append(',');
         json.append("\"worldSnapshotVersion\":").append(snapshot.worldSnapshotVersion()).append(',');
+        String worldImageDataUrl = null;
+        if (snapshot.worldDataAvailable()) {
+            try {
+                Path image = worker.config().worldImage();
+                if (Files.size(image) < 2_000_000) {
+                    worldImageDataUrl = "data:image/png;base64,"
+                        + Base64.getEncoder().encodeToString(Files.readAllBytes(image));
+                }
+            } catch (IOException ignored) {
+            }
+        }
+        json.append("\"worldImageDataUrl\":");
+        if (worldImageDataUrl == null) {
+            json.append("null");
+        } else {
+            json.append('"').append(worldImageDataUrl).append('"');
+        }
+        json.append(',');
         json.append("\"logs\":[");
         for (int i = 0; i < snapshot.logs().size(); i++) {
             if (i > 0) json.append(',');

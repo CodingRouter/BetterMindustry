@@ -159,10 +159,10 @@ public final class DashboardPage {
           set(card, 'checkpoint', w.checkpoint ? 'available' : 'none');
           set(card, 'runtime', w.runtimeDir);
           const preview = card.querySelector('[data-field="world"]');
-          if (w.worldDataAvailable && worldVersions.get(w.id) !== w.worldSnapshotVersion) {
+          if (w.worldDataAvailable && w.worldImageDataUrl && worldVersions.get(w.id) !== w.worldSnapshotVersion) {
             worldVersions.set(w.id, w.worldSnapshotVersion);
             preview.onerror = () => worldVersions.delete(w.id);
-            preview.src = '/api/render/world/' + w.id + '/image?v=' + w.worldSnapshotVersion;
+            preview.src = w.worldImageDataUrl;
           }
           const logs = card.querySelector('[data-field="logs"]');
           logs.textContent = w.logs.join('\\n');
