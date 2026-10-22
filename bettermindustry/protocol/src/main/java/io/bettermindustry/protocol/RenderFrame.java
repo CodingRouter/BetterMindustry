@@ -22,7 +22,8 @@ public record RenderFrame(
         json.append("\"sequence\":").append(sequence).append(',');
         json.append("\"renderTimeMillis\":").append(renderTimeMillis).append(',');
         json.append("\"authoritative\":false,");
-        json.append("\"worldDataAvailable\":false,");
+        json.append("\"worldDataAvailable\":")
+            .append(sectors.stream().anyMatch(SectorFrame::worldDataAvailable)).append(',');
         json.append("\"sectors\":[");
         for (int i = 0; i < sectors.size(); i++) {
             if (i > 0) json.append(',');
@@ -48,7 +49,11 @@ public record RenderFrame(
         int units,
         int enemies,
         int buildings,
-        long diagnosticAgeMillis
+        long diagnosticAgeMillis,
+        boolean worldDataAvailable,
+        double worldSnapshotTick,
+        long worldSnapshotAgeMillis,
+        long worldSnapshotVersion
     ) {
         private void appendJson(StringBuilder json) {
             json.append('{');
@@ -67,7 +72,11 @@ public record RenderFrame(
             json.append("\"units\":").append(units).append(',');
             json.append("\"enemies\":").append(enemies).append(',');
             json.append("\"buildings\":").append(buildings).append(',');
-            json.append("\"diagnosticAgeMillis\":").append(diagnosticAgeMillis);
+            json.append("\"diagnosticAgeMillis\":").append(diagnosticAgeMillis).append(',');
+            json.append("\"worldDataAvailable\":").append(worldDataAvailable).append(',');
+            json.append("\"worldSnapshotTick\":").append(worldSnapshotTick).append(',');
+            json.append("\"worldSnapshotAgeMillis\":").append(worldSnapshotAgeMillis).append(',');
+            json.append("\"worldSnapshotVersion\":").append(worldSnapshotVersion);
             json.append('}');
         }
     }

@@ -18,6 +18,7 @@
 - Worker 列表已改为配置驱动，并加入真实 TCP 端口探测。
 - Worker 已提供 `bmstatus` 结构化 Tick 诊断，调试器实时显示。
 - 已提供 `bettermindustry.render.v1` 单帧端点和 20 Hz SSE 快照流。
+- Server Worker 已生成地图 PNG、单位和建筑 JSON，浏览器 Canvas 已能显示真实地图缩略图。
 
 ## 当前架构决定
 
@@ -34,7 +35,7 @@
 M1：精确 Sector Actor 原型。
 
 1. 定义 `SectorId`、Sector 状态机和最小宇宙清单。
-2. 把完整 Tile/建筑/实体增量加入 Render Frame。
+2. 在 Canvas 上绘制单位和建筑覆盖层，加入实体插值。
 3. 验证双 Worker 的 Tick 连续性、恢复和长期运行。
 4. 增加生产吞吐与瓶颈诊断。
 

@@ -6,7 +6,7 @@
 
 - `bettermindustry.render.v1` 只读 Render Frame。
 - Game Tick、游戏时间、更新计数、波次和实体统计。
-- `authoritative=false` 与 `worldDataAvailable=false` 的显式能力标记。
+- `authoritative=false` 和实时世界快照能力标记。
 
 运行：
 
@@ -15,4 +15,6 @@
 ```
 
 当前 Frame 由 Orchestrator 的 `/api/render/snapshot` 和
-`/api/render/stream` 提供。完整 Tile/实体增量、能力协商和跨世界事件尚未接入。
+`/api/render/stream` 提供。Worker 地图 PNG 和实体元数据由
+`/api/render/world/{id}/image` 与 `/metadata` 提供。完整客户端素材、实体插值、
+能力协商和跨世界事件尚未接入。

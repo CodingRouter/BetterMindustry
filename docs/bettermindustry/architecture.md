@@ -114,8 +114,9 @@ Game Tick 与 Render Tick 的时钟不同：
 - Game Tick 的结果必须通过带 `sectorId` 和 `tick` 的快照/增量传给渲染侧。
 
 当前调试器已经通过 SSE 提供 `bettermindustry.render.v1` 只读帧，浏览器使用自己的
-`requestAnimationFrame` 渲染循环。当前帧只包含 Tick 和实体统计，不包含完整地图几何；
-Render Tick 独立桌面进程和完整场景订阅仍在下一阶段。
+`requestAnimationFrame` 渲染循环。Worker 还提供地图 PNG、单位和建筑元数据，
+浏览器 Canvas 已能显示真实地图缩略图；完整客户端贴图、实体插值和独立桌面
+Render Tick 进程仍在下一阶段。
 
 ## 模拟原则
 

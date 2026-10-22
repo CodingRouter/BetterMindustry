@@ -41,6 +41,7 @@ public final class DashboardPage {
     .controls { padding:0 18px 14px; display:flex; gap:8px; flex-wrap:wrap; }
     .command { display:flex; gap:8px; padding:0 18px 15px; }
     .command input { flex:1; min-width:0; border:1px solid var(--line); background:#09131d; color:var(--text); padding:9px 10px; border-radius:7px; font:inherit; }
+    .world-preview { display:block; width:100%; height:220px; background:#05090d; border-top:1px solid var(--line); border-bottom:1px solid var(--line); image-rendering:pixelated; object-fit:contain; }
     .logs { height:245px; margin:0; padding:13px 16px; overflow:auto; background:#060b10; border-top:1px solid var(--line); color:#9fb4c5; white-space:pre-wrap; overflow-wrap:anywhere; font-size:12px; }
     .footer { color:var(--muted); padding:0 30px 28px; font-size:12px; }
     @media (max-width:700px) { header { align-items:start; flex-direction:column; } main { padding:16px; } .pipeline { margin:16px; } .footer { padding-left:16px; padding-right:16px; } }
@@ -61,6 +62,8 @@ public final class DashboardPage {
   <div class="footer">本地控制面板 · 仅监听 127.0.0.1 · 命令和日志来自真实 Server Worker</div>
   <script>
     const cards = new Map();
+    const worldImages = new Map();
+    const worldVersions = new Map();
     const workersRoot = document.getElementById('workers');
     let renderFrames = 0;
     let displayFrames = 0;
@@ -91,7 +94,7 @@ public final class DashboardPage {
 
       const meta = document.createElement('div');
       meta.className = 'meta';
-      [['进程 PID','pid'],['运行时长','uptime'],['退出码','exit'],['端口监听','portOpen'],['Game Tick','tick'],['游戏时间','gameTime'],['波次','wave'],['单位 / 建筑','entities'],['暂停','paused'],['检查点','checkpoint'],['工作目录','runtime']].forEach(([label, field]) => {
+      [['进程 PID','pid'],['运行时长','uptime'],['退出码','exit'],['端口监听','portOpen'],['Game Tick','tick'],['游戏时间','gameTime'],['波次','wave'],['单位 / 建筑','entities'],['暂停','paused'],['世界快照','world'],['检查点','checkpoint'],['工作目录','runtime']].forEach(([label, field]) => {
         const key = document.createElement('span');
         key.textContent = label;
         const value = document.createElement('strong');
@@ -100,6 +103,13 @@ public final class DashboardPage {
         meta.append(key, value);
       });
       article.append(meta);
+
+      const world = document.createElement('canvas');
+      world.className = 'world-preview';
+      world.width = 320;
+      world.height = 180;
+      world.dataset.field = 'world';
+      article.append(world);
 
       const controls = document.createElement('div');
       controls.className = 'controls';
@@ -147,8 +157,21 @@ public final class DashboardPage {
           set(card, 'wave', w.diagnostics ? w.diagnostics.wave : '-');
           set(card, 'entities', w.diagnostics ? w.diagnostics.units + ' / ' + w.diagnostics.buildings : '-');
           set(card, 'paused', w.diagnostics ? (w.diagnostics.paused ? 'yes' : 'no') : '-');
+          set(card, 'world', w.worldDataAvailable ? (w.worldSnapshotAgeMillis >= 0 ? Math.ceil(w.worldSnapshotAgeMillis / 1000) + 's' : 'ready') : 'waiting');
           set(card, 'checkpoint', w.checkpoint ? 'available' : 'none');
           set(card, 'runtime', w.runtimeDir);
+          if (w.worldDataAvailable && worldVersions.get(w.id) !== w.worldSnapshotVersion) {
+            worldVersions.set(w.id, w.worldSnapshotVersion);
+            const image = new Image();
+            image.onload = () => {
+              worldImages.set(w.id, image);
+              const canvas = card.querySelector('[data-field="world"]');
+              canvas.width = image.naturalWidth;
+              canvas.height = image.naturalHeight;
+            };
+            image.onerror = () => worldVersions.delete(w.id);
+            image.src = '/api/render/world/' + w.id + '/image?v=' + w.worldSnapshotVersion;
+          }
           const logs = card.querySelector('[data-field="logs"]');
           logs.textContent = w.logs.join('\\n');
           logs.scrollTop = logs.scrollHeight;
@@ -167,7 +190,23 @@ public final class DashboardPage {
     }
     function animate() {
       displayFrames++;
+      drawWorlds();
       requestAnimationFrame(animate);
+    }
+    function drawWorlds() {
+      for (const card of cards.values()) {
+        const canvas = card.querySelector('[data-field="world"]');
+        const image = worldImages.get(card.dataset.worker);
+        const context = canvas.getContext('2d');
+        context.fillStyle = '#05090d';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        if (!image) continue;
+        const scale = Math.min(canvas.width / image.width, canvas.height / image.height);
+        const width = image.width * scale;
+        const height = image.height * scale;
+        context.imageSmoothingEnabled = false;
+        context.drawImage(image, (canvas.width - width) / 2, (canvas.height - height) / 2, width, height);
+      }
     }
     requestAnimationFrame(animate);
     const renderStream = new EventSource('/api/render/stream');

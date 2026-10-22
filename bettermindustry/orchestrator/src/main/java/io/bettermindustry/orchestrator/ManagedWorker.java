@@ -40,6 +40,9 @@ public class ManagedWorker {
     private volatile boolean portOpen;
     private volatile long lastPortProbeNanos;
     private volatile long lastDiagnosticRequestNanos;
+    private volatile long lastWorldRequestNanos;
+    private volatile long worldSnapshotUpdatedNanos;
+    private volatile double worldSnapshotTick = -1;
     private volatile Diagnostics diagnostics;
     private BufferedWriter stdin;
 
@@ -71,6 +74,9 @@ public class ManagedWorker {
             diagnostics = null;
             lastPortProbeNanos = 0;
             lastDiagnosticRequestNanos = 0;
+            lastWorldRequestNanos = 0;
+            worldSnapshotUpdatedNanos = 0;
+            worldSnapshotTick = -1;
             state = State.STARTING;
             startedAt = Instant.now();
 
@@ -147,6 +153,7 @@ public class ManagedWorker {
 
     public Snapshot snapshot() {
         requestDiagnosticsIfDue();
+        requestWorldSnapshotIfDue();
         List<String> tail;
         synchronized (logs) {
             int from = Math.max(0, logs.size() - MAX_LOG_LINES);
@@ -158,6 +165,17 @@ public class ManagedWorker {
             addLog("Port " + config.port() + " is listening");
         }
         portOpen = listening;
+        boolean worldDataAvailable = Files.isRegularFile(config.worldImage())
+            && Files.isRegularFile(config.worldMetadata());
+        long worldSnapshotAgeMillis = worldSnapshotUpdatedNanos == 0 ? -1
+            : (System.nanoTime() - worldSnapshotUpdatedNanos) / 1_000_000L;
+        long worldSnapshotVersion = -1;
+        if (worldDataAvailable) {
+            try {
+                worldSnapshotVersion = Files.getLastModifiedTime(config.worldMetadata()).toMillis();
+            } catch (IOException ignored) {
+            }
+        }
         return new Snapshot(
             config.id(),
             config.map(),
@@ -171,6 +189,10 @@ public class ManagedWorker {
             listening,
             Files.isRegularFile(config.checkpoint()),
             diagnostics,
+            worldDataAvailable,
+            worldSnapshotTick,
+            worldSnapshotAgeMillis,
+            worldSnapshotVersion,
             tail
         );
     }
@@ -184,6 +206,11 @@ public class ManagedWorker {
                 int diagnosticStart = clean.indexOf("BMSTATUS ");
                 if (diagnosticStart >= 0) {
                     updateDiagnostics(clean.substring(diagnosticStart + "BMSTATUS ".length()));
+                    continue;
+                }
+                int worldStart = clean.indexOf("BMWORLD ");
+                if (worldStart >= 0) {
+                    updateWorldSnapshot(clean.substring(worldStart + "BMWORLD ".length()));
                     continue;
                 }
                 addLog(clean);
@@ -221,6 +248,26 @@ public class ManagedWorker {
         if (now - lastDiagnosticRequestNanos >= 1_000_000_000L) {
             lastDiagnosticRequestNanos = now;
             writeCommand("bmstatus", false);
+        }
+    }
+
+    private void requestWorldSnapshotIfDue() {
+        Process current = process;
+        if (current == null || !current.isAlive()) return;
+        long now = System.nanoTime();
+        if (now - lastWorldRequestNanos >= 2_000_000_000L) {
+            lastWorldRequestNanos = now;
+            writeCommand("bmworld", false);
+        }
+    }
+
+    private void updateWorldSnapshot(String value) {
+        try {
+            String token = value.trim().split("\\s+")[0];
+            worldSnapshotTick = Double.parseDouble(token);
+            worldSnapshotUpdatedNanos = System.nanoTime();
+        } catch (RuntimeException e) {
+            addLog("Failed to parse bmworld: " + e.getMessage());
         }
     }
 
@@ -348,6 +395,10 @@ public class ManagedWorker {
         boolean portOpen,
         boolean checkpoint,
         Diagnostics diagnostics,
+        boolean worldDataAvailable,
+        double worldSnapshotTick,
+        long worldSnapshotAgeMillis,
+        long worldSnapshotVersion,
         List<String> logs
     ) {
     }

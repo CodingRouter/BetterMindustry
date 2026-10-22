@@ -8,6 +8,8 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -33,6 +35,7 @@ public class DashboardServer {
         server.createContext("/api/overview", this::overview);
         server.createContext("/api/render/snapshot", this::renderSnapshot);
         server.createContext("/api/render/stream", this::renderStream);
+        server.createContext("/api/render/world/", this::renderWorld);
         server.createContext("/api/start-all", exchange -> action(exchange, () -> manager.startAll()));
         server.createContext("/api/stop-all", exchange -> action(exchange, () -> manager.stopAll()));
         server.createContext("/api/worker/", this::workerAction);
@@ -146,7 +149,11 @@ public class DashboardServer {
                 diagnostics == null ? 0 : diagnostics.units(),
                 diagnostics == null ? 0 : diagnostics.enemies(),
                 diagnostics == null ? 0 : diagnostics.buildings(),
-                age
+                age,
+                snapshot.worldDataAvailable(),
+                snapshot.worldSnapshotTick(),
+                snapshot.worldSnapshotAgeMillis(),
+                snapshot.worldSnapshotVersion()
             ));
         }
         return new RenderFrame(
@@ -155,6 +162,38 @@ public class DashboardServer {
             System.currentTimeMillis(),
             sectors
         );
+    }
+
+    private void renderWorld(HttpExchange exchange) throws IOException {
+        String[] parts = exchange.getRequestURI().getPath().split("/");
+        if (!"GET".equalsIgnoreCase(exchange.getRequestMethod()) || parts.length != 6) {
+            send(exchange, 404, "World snapshot not found", "text/plain; charset=utf-8");
+            return;
+        }
+        ManagedWorker worker = manager.find(parts[4]);
+        if (worker == null) {
+            send(exchange, 404, "Worker not found", "text/plain; charset=utf-8");
+            return;
+        }
+
+        Path file;
+        String contentType;
+        if ("image".equals(parts[5])) {
+            file = worker.config().worldImage();
+            contentType = "image/png";
+        } else if ("metadata".equals(parts[5])) {
+            file = worker.config().worldMetadata();
+            contentType = "application/json; charset=utf-8";
+        } else {
+            send(exchange, 404, "World asset not found", "text/plain; charset=utf-8");
+            return;
+        }
+
+        if (!Files.isRegularFile(file)) {
+            send(exchange, 404, "World snapshot not ready", "text/plain; charset=utf-8");
+            return;
+        }
+        sendBytes(exchange, 200, Files.readAllBytes(file), contentType);
     }
 
     private void workerAction(HttpExchange exchange) throws IOException {
@@ -236,6 +275,10 @@ public class DashboardServer {
             json.append('}');
         }
         json.append(',');
+        json.append("\"worldDataAvailable\":").append(snapshot.worldDataAvailable()).append(',');
+        json.append("\"worldSnapshotTick\":").append(snapshot.worldSnapshotTick()).append(',');
+        json.append("\"worldSnapshotAgeMillis\":").append(snapshot.worldSnapshotAgeMillis()).append(',');
+        json.append("\"worldSnapshotVersion\":").append(snapshot.worldSnapshotVersion()).append(',');
         json.append("\"logs\":[");
         for (int i = 0; i < snapshot.logs().size(); i++) {
             if (i > 0) json.append(',');
@@ -250,6 +293,10 @@ public class DashboardServer {
 
     private static void send(HttpExchange exchange, int status, String body, String contentType) throws IOException {
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+        sendBytes(exchange, status, bytes, contentType);
+    }
+
+    private static void sendBytes(HttpExchange exchange, int status, byte[] bytes, String contentType) throws IOException {
         exchange.getResponseHeaders().set("Content-Type", contentType);
         exchange.getResponseHeaders().set("Cache-Control", "no-store");
         exchange.sendResponseHeaders(status, bytes.length);
