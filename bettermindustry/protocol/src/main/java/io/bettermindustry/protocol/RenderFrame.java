@@ -7,6 +7,7 @@ public record RenderFrame(
     long sequence,
     long renderTimeMillis,
     String focusSectorId,
+    String controlOwnerId,
     List<SectorFrame> sectors
 ) {
     public static final int VERSION = 2;
@@ -23,6 +24,10 @@ public record RenderFrame(
         json.append("\"sequence\":").append(sequence).append(',');
         json.append("\"renderTimeMillis\":").append(renderTimeMillis).append(',');
         json.append("\"focusSectorId\":\"").append(escape(focusSectorId)).append("\",");
+        json.append("\"controlOwnerId\":");
+        if (controlOwnerId == null) json.append("null");
+        else json.append('"').append(escape(controlOwnerId)).append('"');
+        json.append(',');
         json.append("\"authoritative\":false,");
         json.append("\"worldDataAvailable\":")
             .append(sectors.stream().anyMatch(SectorFrame::worldDataAvailable)).append(',');

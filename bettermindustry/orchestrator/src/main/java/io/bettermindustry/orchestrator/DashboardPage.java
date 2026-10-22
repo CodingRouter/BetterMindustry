@@ -76,6 +76,7 @@ public final class DashboardPage {
   <section class="summary">
     <div class="summary-card"><span>运行 Worker</span><strong id="summary-workers">-</strong></div>
     <div class="summary-card"><span>Focus Sector</span><strong id="summary-focus">-</strong></div>
+    <div class="summary-card"><span>控制权</span><strong id="summary-control">-</strong></div>
     <div class="summary-card"><span>在线玩家</span><strong id="summary-players">-</strong></div>
     <div class="summary-card"><span>单位 / 敌人</span><strong id="summary-units">-</strong></div>
     <div class="summary-card"><span>建筑总数</span><strong id="summary-buildings">-</strong></div>
@@ -89,7 +90,16 @@ public final class DashboardPage {
     let renderFrames = 0;
     let displayFrames = 0;
     let latestRenderFrame = null;
+    let latestGateway = null;
     let renderConnected = false;
+    const clientId = localStorage.getItem('bm-client-id') || (crypto.randomUUID ? crypto.randomUUID() : 'client-' + Date.now());
+    localStorage.setItem('bm-client-id', clientId);
+
+    async function apiFetch(url, options = {}) {
+      const headers = new Headers(options.headers || {});
+      headers.set('X-BM-Client-Id', clientId);
+      return fetch(url, {...options, headers});
+    }
 
     function set(card, name, value) {
       const el = card.querySelector('[data-field="' + name + '"]');
@@ -155,7 +165,7 @@ public final class DashboardPage {
         ['进程 PID','pid'], ['运行时长','uptime'], ['退出码','exit'], ['端口监听','portOpen'],
         ['地图','mapName'], ['玩家','players'], ['Game Tick','tick'], ['游戏时间','gameTime'],
         ['波次','wave'], ['单位','units'], ['敌人','enemies'], ['建筑','buildings'],
-        ['暂停','paused'], ['视口模式','viewMode'], ['世界快照','worldAge'], ['快照 Tick','snapshotTick'], ['检查点','checkpoint']
+        ['暂停','paused'], ['视口模式','viewMode'], ['控制权','control'], ['世界快照','worldAge'], ['快照 Tick','snapshotTick'], ['检查点','checkpoint']
       ].forEach(([label, field]) => {
         const item = document.createElement('div');
         item.className = 'meta-item';
@@ -171,7 +181,7 @@ public final class DashboardPage {
 
       const controls = document.createElement('div');
       controls.className = 'controls';
-      [['start','启动'],['stop','停止'],['save','保存检查点'],['gateway-focus','设为主控'],['gateway-view','切换视口']].forEach(([action,label]) => {
+      [['start','启动'],['stop','停止'],['save','保存检查点'],['gateway-focus','设为主控'],['gateway-view','切换视口'],['gateway-acquire','获取控制'],['gateway-release','释放控制']].forEach(([action,label]) => {
         const button = document.createElement('button');
         if (action.startsWith('gateway-')) {
           button.dataset.gatewayAction = action.substring('gateway-'.length);
@@ -205,10 +215,11 @@ public final class DashboardPage {
 
     async function refresh() {
       try {
-        const data = await fetch('/api/overview', {cache:'no-store'}).then(r => r.json());
+        const data = await apiFetch('/api/overview', {cache:'no-store'}).then(r => r.json());
         document.getElementById('subtitle').textContent = 'Project: ' + data.projectRoot;
         let running = 0, players = 0, units = 0, enemies = 0, buildings = 0;
         const gateway = data.gateway || {focusSectorId:'-', views:{}};
+        latestGateway = gateway;
         for (const w of data.workers) {
           const card = cards.get(w.id) || createCard(w);
           const d = w.diagnostics;
@@ -237,6 +248,12 @@ public final class DashboardPage {
           const focusBadge = card.querySelector('[data-field="focusBadge"]');
           focusBadge.textContent = isFocus ? 'FOCUS' : 'OBSERVE';
           focusBadge.classList.toggle('observe', !isFocus);
+          const control = isFocus
+            ? (gateway.controlOwnerId === clientId
+                ? 'owned · ' + Math.ceil(gateway.controlExpiresInMillis / 1000) + 's'
+                : gateway.controlOwnerId ? 'held by ' + gateway.controlOwnerId.slice(0, 8) : 'available')
+            : 'observe';
+          set(card, 'control', control);
           set(card, 'worldAge', w.worldDataAvailable ? (w.worldSnapshotAgeMillis >= 0 ? Math.ceil(w.worldSnapshotAgeMillis / 1000) + 's' : 'ready') : 'waiting');
           set(card, 'snapshotTick', w.worldDataAvailable ? Math.floor(w.worldSnapshotTick) : '-');
           set(card, 'checkpoint', w.checkpoint ? 'available' : 'none');
@@ -253,6 +270,9 @@ public final class DashboardPage {
         }
         document.getElementById('summary-workers').textContent = running + ' / ' + data.workers.length;
         document.getElementById('summary-focus').textContent = gateway.focusSectorId || '-';
+        document.getElementById('summary-control').textContent = gateway.controlOwnerId
+          ? (gateway.controlOwnerId === clientId ? 'FOCUS OWNED' : 'HELD')
+          : 'FREE';
         document.getElementById('summary-players').textContent = players;
         document.getElementById('summary-units').textContent = units + ' / ' + enemies;
         document.getElementById('summary-buildings').textContent = buildings;
@@ -295,21 +315,27 @@ public final class DashboardPage {
     }, 1000);
 
     async function action(worker, name) {
-      await fetch('/api/worker/' + worker + '/' + name, {method:'POST'});
+      await apiFetch('/api/worker/' + worker + '/' + name, {method:'POST'});
       refresh();
     }
     workersRoot.addEventListener('click', async event => {
       const gatewayButton = event.target.closest('[data-gateway-action]');
       if (gatewayButton) {
         const card = gatewayButton.closest('[data-worker]');
+        let response;
         if (gatewayButton.dataset.gatewayAction === 'focus') {
-          await fetch('/api/gateway/focus/' + card.dataset.worker, {method:'POST'});
+          response = await apiFetch('/api/gateway/focus/' + card.dataset.worker, {method:'POST'});
         } else if (gatewayButton.dataset.gatewayAction === 'view') {
           const current = card.dataset.viewMode || 'FULL';
           let next = current === 'FULL' ? 'SUMMARY' : current === 'SUMMARY' ? 'OFF' : 'FULL';
           if (card.classList.contains('focused') && next === 'OFF') next = 'FULL';
-          await fetch('/api/gateway/views/' + card.dataset.worker + '/' + next, {method:'POST'});
+          response = await apiFetch('/api/gateway/views/' + card.dataset.worker + '/' + next, {method:'POST'});
+        } else if (gatewayButton.dataset.gatewayAction === 'acquire') {
+          response = await apiFetch('/api/gateway/control/acquire/' + card.dataset.worker, {method:'POST'});
+        } else if (gatewayButton.dataset.gatewayAction === 'release') {
+          response = await apiFetch('/api/gateway/control/release/' + card.dataset.worker, {method:'POST'});
         }
+        if (response && !response.ok) alert(await response.text());
         refresh();
         return;
       }
@@ -321,14 +347,19 @@ public final class DashboardPage {
         const input = card.querySelector('[data-command]');
         const command = input.value.trim();
         if (!command) return;
-        await fetch('/api/worker/' + card.dataset.worker + '/command', {method:'POST', body:command});
+        await apiFetch('/api/worker/' + card.dataset.worker + '/command', {method:'POST', body:command});
         input.value = '';
       } else {
         await action(card.dataset.worker, actionName);
       }
     });
-    document.getElementById('start-all').addEventListener('click', async () => { await fetch('/api/start-all',{method:'POST'}); refresh(); });
-    document.getElementById('stop-all').addEventListener('click', async () => { await fetch('/api/stop-all',{method:'POST'}); refresh(); });
+    document.getElementById('start-all').addEventListener('click', async () => { await apiFetch('/api/start-all',{method:'POST'}); refresh(); });
+    document.getElementById('stop-all').addEventListener('click', async () => { await apiFetch('/api/stop-all',{method:'POST'}); refresh(); });
+    setInterval(async () => {
+      if (latestGateway && latestGateway.controlOwnerId === clientId && latestGateway.focusSectorId) {
+        await apiFetch('/api/gateway/control/renew/' + latestGateway.focusSectorId, {method:'POST'});
+      }
+    }, 5000);
     refresh();
     setInterval(refresh, 1000);
   </script>

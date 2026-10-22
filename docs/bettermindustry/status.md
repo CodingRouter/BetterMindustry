@@ -2,7 +2,7 @@
 
 - 最后更新：2026-10-22
 - 当前分支：`feat/m1b-gateway`
-- 当前阶段：M1B Gateway 持久化和视口采样节流已完成
+- 当前阶段：M1B Gateway 持久化、采样节流和 Focus 控制租约已完成
 - 当前里程碑：M1A 完成，M1B 原型进行中
 
 ## 已完成
@@ -24,6 +24,7 @@
 - Render 协议升级为 `bettermindustry.render.v2`。
 - Gateway 状态跨 Orchestrator 重启恢复。
 - FULL/SUMMARY/OFF 已实际控制诊断和地图快照频率。
+- Focus Sector 支持 15 秒控制权租约、竞争拒绝、续约和自动过期。
 
 ## 当前架构决定
 
@@ -39,8 +40,8 @@
 
 M1B 后续：
 
-1. 多用户和控制权租约。
-2. 将 Focus 路由到真实玩家输入。
+1. 将 Focus 控制租约路由到真实玩家输入。
+2. 增加用户认证和控制权撤销。
 3. 按客户端带宽动态调整订阅频率。
 4. 将浏览器 WorldView 迁移到真正的 Mindustry 桌面客户端。
 

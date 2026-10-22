@@ -7,7 +7,7 @@
 - `bettermindustry.render.v2` 只读 Render Frame。
 - Game Tick、游戏时间、更新计数、波次和实体统计。
 - `authoritative=false` 和实时世界快照能力标记。
-- `focusSectorId` 与每 Sector 的 `viewMode`。
+- `focusSectorId`、`controlOwnerId` 与每 Sector 的 `viewMode`。
 
 运行：
 

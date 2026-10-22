@@ -13,10 +13,14 @@ import java.util.Map;
 import java.util.Properties;
 
 public final class Gateway {
+    private static final long CONTROL_LEASE_MILLIS = 15_000L;
+
     private final WorkerManager manager;
     private final Path stateFile;
     private final LinkedHashMap<String, ViewMode> views = new LinkedHashMap<>();
     private String focusSectorId;
+    private String controlOwnerId;
+    private long controlExpiresAtMillis;
 
     public Gateway(WorkerManager manager, Path stateFile) {
         this.manager = manager;
@@ -40,10 +44,43 @@ public final class Gateway {
 
     public synchronized void setFocus(String sectorId) {
         requireWorker(sectorId);
+        if (!sectorId.equals(focusSectorId)) {
+            clearControl();
+        }
         focusSectorId = sectorId;
         views.put(sectorId, ViewMode.FULL);
         applyPolicies();
         persist();
+    }
+
+    public synchronized Snapshot acquireControl(String sectorId, String clientId) {
+        requireWorker(sectorId);
+        requireClient(clientId);
+        if (!sectorId.equals(focusSectorId)) {
+            throw new IllegalStateException("control can only be acquired for the focus sector");
+        }
+        long now = System.currentTimeMillis();
+        expireControl(now);
+        if (controlOwnerId != null && !controlOwnerId.equals(clientId)) {
+            throw new IllegalStateException("control is held by " + controlOwnerId);
+        }
+        controlOwnerId = clientId;
+        controlExpiresAtMillis = now + CONTROL_LEASE_MILLIS;
+        return snapshot();
+    }
+
+    public synchronized Snapshot releaseControl(String sectorId, String clientId) {
+        requireWorker(sectorId);
+        requireClient(clientId);
+        long now = System.currentTimeMillis();
+        expireControl(now);
+        if (controlOwnerId != null && !controlOwnerId.equals(clientId)) {
+            throw new IllegalStateException("control is held by " + controlOwnerId);
+        }
+        if (controlOwnerId != null) {
+            clearControl();
+        }
+        return snapshot();
     }
 
     public synchronized void setViewMode(String sectorId, ViewMode mode) {
@@ -57,7 +94,10 @@ public final class Gateway {
     }
 
     public synchronized Snapshot snapshot() {
-        return new Snapshot(focusSectorId, Map.copyOf(views));
+        long now = System.currentTimeMillis();
+        expireControl(now);
+        long remaining = controlOwnerId == null ? 0 : Math.max(0, controlExpiresAtMillis - now);
+        return new Snapshot(focusSectorId, Map.copyOf(views), controlOwnerId, controlExpiresAtMillis, remaining);
     }
 
     private void load() {
@@ -122,6 +162,29 @@ public final class Gateway {
         }
     }
 
-    public record Snapshot(String focusSectorId, Map<String, ViewMode> views) {
+    private void requireClient(String clientId) {
+        if (clientId == null || clientId.isBlank()) {
+            throw new IllegalArgumentException("client id is required");
+        }
+    }
+
+    private void expireControl(long now) {
+        if (controlOwnerId != null && now >= controlExpiresAtMillis) {
+            clearControl();
+        }
+    }
+
+    private void clearControl() {
+        controlOwnerId = null;
+        controlExpiresAtMillis = 0;
+    }
+
+    public record Snapshot(
+        String focusSectorId,
+        Map<String, ViewMode> views,
+        String controlOwnerId,
+        long controlExpiresAtMillis,
+        long controlExpiresInMillis
+    ) {
     }
 }

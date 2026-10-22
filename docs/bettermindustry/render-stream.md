@@ -41,6 +41,7 @@ Content-Type: text/event-stream
   "sequence": 12,
   "renderTimeMillis": 1792638436685,
   "focusSectorId": "sector-a",
+  "controlOwnerId": "client-a",
   "authoritative": false,
   "worldDataAvailable": false,
   "sectors": [

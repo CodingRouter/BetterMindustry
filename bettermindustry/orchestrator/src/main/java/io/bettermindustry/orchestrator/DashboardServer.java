@@ -46,6 +46,7 @@ public class DashboardServer {
         server.createContext("/api/gateway", this::gatewayState);
         server.createContext("/api/gateway/focus/", this::gatewayFocus);
         server.createContext("/api/gateway/views/", this::gatewayView);
+        server.createContext("/api/gateway/control/", this::gatewayControl);
         server.createContext("/api/start-all", exchange -> action(exchange, () -> manager.startAll()));
         server.createContext("/api/stop-all", exchange -> action(exchange, () -> manager.stopAll()));
         server.createContext("/api/worker/", this::workerAction);
@@ -176,6 +177,7 @@ public class DashboardServer {
             renderSequence.incrementAndGet(),
             System.currentTimeMillis(),
             gatewayState.focusSectorId(),
+            gatewayState.controlOwnerId(),
             sectors
         );
     }
@@ -230,11 +232,50 @@ public class DashboardServer {
         }
     }
 
+    private void gatewayControl(HttpExchange exchange) throws IOException {
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            send(exchange, 405, "Method not allowed", "text/plain; charset=utf-8");
+            return;
+        }
+        String[] parts = exchange.getRequestURI().getPath().split("/");
+        if (parts.length != 6) {
+            send(exchange, 400, "Control action requires action and sector id", "text/plain; charset=utf-8");
+            return;
+        }
+        String clientId = exchange.getRequestHeaders().getFirst("X-BM-Client-Id");
+        try {
+            Gateway.Snapshot state = switch (parts[4]) {
+                case "acquire", "renew" -> gateway.acquireControl(parts[5], clientId);
+                case "release" -> gateway.releaseControl(parts[5], clientId);
+                default -> throw new IllegalArgumentException("unknown control action: " + parts[4]);
+            };
+            StringBuilder json = new StringBuilder();
+            appendGateway(json, state);
+            send(exchange, 200, json.toString(), "application/json; charset=utf-8");
+        } catch (IllegalArgumentException e) {
+            send(exchange, 400, e.getMessage(), "text/plain; charset=utf-8");
+        } catch (IllegalStateException e) {
+            send(exchange, 409, e.getMessage(), "text/plain; charset=utf-8");
+        }
+    }
+
     private void appendGateway(StringBuilder json) {
-        Gateway.Snapshot state = gateway.snapshot();
+        appendGateway(json, gateway.snapshot());
+    }
+
+    private void appendGateway(StringBuilder json, Gateway.Snapshot state) {
         json.append('{');
         json.append("\"focusSectorId\":\"").append(escape(state.focusSectorId())).append("\",");
         json.append("\"stateFile\":\"").append(escape(gateway.stateFile().toString())).append("\",");
+        json.append("\"controlOwnerId\":");
+        if (state.controlOwnerId() == null) {
+            json.append("null");
+        } else {
+            json.append('"').append(escape(state.controlOwnerId())).append('"');
+        }
+        json.append(',');
+        json.append("\"controlExpiresAtMillis\":").append(state.controlExpiresAtMillis()).append(',');
+        json.append("\"controlExpiresInMillis\":").append(state.controlExpiresInMillis()).append(',');
         json.append("\"views\":{");
         int index = 0;
         for (Map.Entry<String, ViewMode> entry : state.views().entrySet()) {
