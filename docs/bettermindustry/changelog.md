@@ -21,6 +21,7 @@
 - 修复 SSE 与总览并发调用导致的诊断命令交错。
 - Gateway Focus/WorldView 状态和 `bettermindustry.render.v2`。
 - 浏览器 FULL/SUMMARY/OFF 多视口原型。
+- Gateway Focus/ViewMode 持久化和按视口模式采样节流。
 
 ### Next
 

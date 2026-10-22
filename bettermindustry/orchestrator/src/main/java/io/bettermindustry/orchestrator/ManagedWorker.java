@@ -41,6 +41,9 @@ public class ManagedWorker {
     private volatile long lastPortProbeNanos;
     private volatile long lastDiagnosticRequestNanos;
     private volatile long lastWorldRequestNanos;
+    private volatile long diagnosticIntervalNanos = 1_000_000_000L;
+    private volatile long worldIntervalNanos = 2_000_000_000L;
+    private volatile boolean worldRequestsEnabled = true;
     private volatile long worldSnapshotUpdatedNanos;
     private volatile double worldSnapshotTick = -1;
     private volatile Diagnostics diagnostics;
@@ -53,6 +56,28 @@ public class ManagedWorker {
 
     public WorkerConfig config() {
         return config;
+    }
+
+    public synchronized void setViewPolicy(ViewMode mode) {
+        switch (mode) {
+            case FULL -> {
+                diagnosticIntervalNanos = 1_000_000_000L;
+                worldIntervalNanos = 2_000_000_000L;
+                worldRequestsEnabled = true;
+            }
+            case SUMMARY -> {
+                diagnosticIntervalNanos = 2_500_000_000L;
+                worldIntervalNanos = 5_000_000_000L;
+                worldRequestsEnabled = true;
+            }
+            case OFF -> {
+                diagnosticIntervalNanos = 5_000_000_000L;
+                worldIntervalNanos = 0;
+                worldRequestsEnabled = false;
+            }
+        }
+        lastDiagnosticRequestNanos = 0;
+        lastWorldRequestNanos = 0;
     }
 
     public synchronized String start() {
@@ -245,7 +270,7 @@ public class ManagedWorker {
         Process current = process;
         if (current == null || !current.isAlive()) return;
         long now = System.nanoTime();
-        if (now - lastDiagnosticRequestNanos >= 1_000_000_000L) {
+        if (now - lastDiagnosticRequestNanos >= diagnosticIntervalNanos) {
             lastDiagnosticRequestNanos = now;
             writeCommand("bmstatus", false);
         }
@@ -254,8 +279,9 @@ public class ManagedWorker {
     private synchronized void requestWorldSnapshotIfDue() {
         Process current = process;
         if (current == null || !current.isAlive()) return;
+        if (!worldRequestsEnabled) return;
         long now = System.nanoTime();
-        if (now - lastWorldRequestNanos >= 2_000_000_000L) {
+        if (now - lastWorldRequestNanos >= worldIntervalNanos) {
             lastWorldRequestNanos = now;
             writeCommand("bmworld", false);
         }

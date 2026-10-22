@@ -29,7 +29,10 @@ public class DashboardServer {
 
     public DashboardServer(WorkerManager manager, int port) {
         this.manager = manager;
-        this.gateway = new Gateway(manager);
+        this.gateway = new Gateway(
+            manager,
+            manager.projectRoot().resolve("bettermindustry/runtime/gateway.properties")
+        );
         this.port = port;
     }
 
@@ -231,6 +234,7 @@ public class DashboardServer {
         Gateway.Snapshot state = gateway.snapshot();
         json.append('{');
         json.append("\"focusSectorId\":\"").append(escape(state.focusSectorId())).append("\",");
+        json.append("\"stateFile\":\"").append(escape(gateway.stateFile().toString())).append("\",");
         json.append("\"views\":{");
         int index = 0;
         for (Map.Entry<String, ViewMode> entry : state.views().entrySet()) {

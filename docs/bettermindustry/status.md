@@ -2,7 +2,7 @@
 
 - 最后更新：2026-10-22
 - 当前分支：`feat/m1b-gateway`
-- 当前阶段：M1B Gateway 和浏览器多 WorldView 原型已完成
+- 当前阶段：M1B Gateway 持久化和视口采样节流已完成
 - 当前里程碑：M1A 完成，M1B 原型进行中
 
 ## 已完成
@@ -22,6 +22,8 @@
 - 两个 Worker 连续运行超过 10 分钟，故障隔离和控制层恢复通过。
 - Gateway 支持唯一 Focus Sector 和 FULL/SUMMARY/OFF 视口模式。
 - Render 协议升级为 `bettermindustry.render.v2`。
+- Gateway 状态跨 Orchestrator 重启恢复。
+- FULL/SUMMARY/OFF 已实际控制诊断和地图快照频率。
 
 ## 当前架构决定
 
@@ -37,9 +39,9 @@
 
 M1B 后续：
 
-1. Gateway 状态持久化和多用户控制权租约。
+1. 多用户和控制权租约。
 2. 将 Focus 路由到真实玩家输入。
-3. SUMMARY/OFF 降低 Worker 快照频率。
+3. 按客户端带宽动态调整订阅频率。
 4. 将浏览器 WorldView 迁移到真正的 Mindustry 桌面客户端。
 
 双世界手工实验记录见 `docs/bettermindustry/spikes/0001-two-worker-manual.md`。

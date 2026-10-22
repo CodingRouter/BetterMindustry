@@ -7,6 +7,7 @@ Gateway 是客户端和多个 Sector Worker 之间的控制边界，当前维护
 - 唯一 `focusSectorId`。
 - 每个 Sector 的视口模式。
 - 多 WorldView 的订阅状态。
+- 持久化的 Focus 和视口状态。
 
 视口模式：
 
@@ -17,6 +18,26 @@ Gateway 是客户端和多个 Sector Worker 之间的控制边界，当前维护
 | `OFF` | 关闭视口 |
 
 Focus Sector 必须是已配置的 Worker，并且不能被设为 OFF。
+
+状态保存在：
+
+```text
+bettermindustry/runtime/gateway.properties
+```
+
+重启 Orchestrator 后会恢复 Focus 和所有 ViewMode。
+
+## 采样频率
+
+视口模式不仅影响 UI，也控制 Worker 诊断和地图快照频率：
+
+| 模式 | 状态诊断 | 地图快照 |
+| --- | ---: | ---: |
+| `FULL` | 1 秒 | 2 秒 |
+| `SUMMARY` | 2.5 秒 | 5 秒 |
+| `OFF` | 5 秒 | 停止 |
+
+OFF 仍保留低频健康检查，但不会继续请求 `bmworld`。
 
 ## HTTP API
 
@@ -57,6 +78,5 @@ POST /api/gateway/views/sector-a/SUMMARY
 
 - 当前是 Web 调试客户端，不是最终 Mindustry 桌面客户端。
 - 还没有真正的玩家输入路由；Focus 目前只表示控制和观察身份。
-- Gateway 状态保存在内存中，重启后恢复默认 Focus。
 - 还没有多用户、权限、连接租约和跨 Sector 传送。
-- SUMMARY/OFF 还没有降低 Worker 快照频率。
+- 采样策略是固定配置，尚未支持按客户端带宽动态调整。
