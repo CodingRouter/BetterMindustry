@@ -273,23 +273,52 @@ public class DashboardServer {
             return;
         }
         String[] parts = exchange.getRequestURI().getPath().split("/");
-        if (parts.length != 6 || !"status".equals(parts[4])) {
-            send(exchange, 400, "Only the status input is currently supported", "text/plain; charset=utf-8");
+        if (parts.length != 6) {
+            send(exchange, 400, "Input action requires a sector id", "text/plain; charset=utf-8");
             return;
         }
 
         String clientId = clientId(exchange);
         String sectorId = parts[5];
+        String action = parts[4];
+        String command;
+        String detail;
+        if ("status".equals(action)) {
+            command = "status";
+            detail = "";
+        } else if ("pause".equals(action)) {
+            command = "pause on";
+            detail = "on";
+        } else if ("resume".equals(action)) {
+            command = "pause off";
+            detail = "off";
+        } else if ("chat".equals(action)) {
+            detail = readBody(exchange)
+                .replaceAll("\\p{Cntrl}", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
+            if (detail.isBlank() || detail.length() > 150) {
+                send(exchange, 400, "Chat message must contain 1-150 characters", "text/plain; charset=utf-8");
+                return;
+            }
+            command = "say " + detail;
+        } else {
+            send(exchange, 400, "Unknown input action: " + action, "text/plain; charset=utf-8");
+            return;
+        }
+
         try {
             ManagedWorker worker = gateway.authorizeInput(clientId, sectorId);
-            String result = worker.sendCommand("status");
+            String result = worker.sendCommand(command);
             if (!"Sent".equals(result)) {
                 send(exchange, 409, result, "text/plain; charset=utf-8");
                 return;
             }
+            gateway.recordInput(clientId, sectorId, action, detail);
             send(exchange, 200,
                 "{\"ok\":true,\"clientId\":\"" + escape(clientId)
-                    + "\",\"sectorId\":\"" + escape(sectorId) + "\",\"command\":\"status\"}",
+                    + "\",\"sectorId\":\"" + escape(sectorId) + "\",\"command\":\""
+                    + escape(action) + "\",\"detail\":\"" + escape(detail) + "\"}",
                 "application/json; charset=utf-8");
         } catch (IllegalArgumentException e) {
             send(exchange, 400, e.getMessage(), "text/plain; charset=utf-8");
@@ -330,7 +359,20 @@ public class DashboardServer {
             json.append('"').append(escape(entry.getKey())).append("\":\"")
                 .append(entry.getValue().name()).append('"');
         }
-        json.append("}}");
+        json.append("},\"recentInputs\":[");
+        int inputCount = Math.min(10, state.recentInputs().size());
+        for (int i = 0; i < inputCount; i++) {
+            if (i > 0) json.append(',');
+            Gateway.InputAudit audit = state.recentInputs().get(i);
+            json.append('{');
+            json.append("\"timestampMillis\":").append(audit.timestampMillis()).append(',');
+            json.append("\"clientId\":\"").append(escape(audit.clientId())).append("\",");
+            json.append("\"sectorId\":\"").append(escape(audit.sectorId())).append("\",");
+            json.append("\"command\":\"").append(escape(audit.command())).append("\",");
+            json.append("\"detail\":\"").append(escape(audit.detail())).append("\"");
+            json.append('}');
+        }
+        json.append("]}");
     }
 
     private void renderWorld(HttpExchange exchange) throws IOException {

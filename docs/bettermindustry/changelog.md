@@ -25,6 +25,7 @@
 - Gateway Focus 控制权租约、竞争拒绝、自动续约和过期。
 - 多 Client Session、独立 Focus/ViewMode 和有效视口合并。
 - Focus 控制租约接入首个授权输入端点。
+- 受控输入 v1、pause/resume/chat 和 Gateway 输入审计。
 
 ### Next
 

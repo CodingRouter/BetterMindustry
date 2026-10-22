@@ -181,7 +181,7 @@ public final class DashboardPage {
 
       const controls = document.createElement('div');
       controls.className = 'controls';
-      [['start','启动'],['stop','停止'],['save','保存检查点'],['gateway-focus','设为主控'],['gateway-view','切换视口'],['gateway-acquire','获取控制'],['gateway-release','释放控制'],['gateway-input','测试输入']].forEach(([action,label]) => {
+      [['start','启动'],['stop','停止'],['save','保存检查点'],['gateway-focus','设为主控'],['gateway-view','切换视口'],['gateway-acquire','获取控制'],['gateway-release','释放控制'],['gateway-pause','暂停'],['gateway-resume','继续']].forEach(([action,label]) => {
         const button = document.createElement('button');
         if (action.startsWith('gateway-')) {
           button.dataset.gatewayAction = action.substring('gateway-'.length);
@@ -197,10 +197,10 @@ public final class DashboardPage {
       command.className = 'command';
       const input = document.createElement('input');
       input.dataset.command = '';
-      input.placeholder = '向 ' + worker.id + ' 发送服务端命令…';
+      input.placeholder = '获得控制权后向 ' + worker.id + ' 发送聊天…';
       const send = document.createElement('button');
-      send.dataset.action = 'command';
-      send.textContent = '发送';
+      send.dataset.gatewayAction = 'chat';
+      send.textContent = '发送聊天';
       command.append(input, send);
       article.append(command);
 
@@ -334,8 +334,19 @@ public final class DashboardPage {
           response = await apiFetch('/api/gateway/control/acquire/' + card.dataset.worker, {method:'POST'});
         } else if (gatewayButton.dataset.gatewayAction === 'release') {
           response = await apiFetch('/api/gateway/control/release/' + card.dataset.worker, {method:'POST'});
-        } else if (gatewayButton.dataset.gatewayAction === 'input') {
-          response = await apiFetch('/api/gateway/input/status/' + card.dataset.worker, {method:'POST'});
+        } else if (gatewayButton.dataset.gatewayAction === 'pause') {
+          response = await apiFetch('/api/gateway/input/pause/' + card.dataset.worker, {method:'POST'});
+        } else if (gatewayButton.dataset.gatewayAction === 'resume') {
+          response = await apiFetch('/api/gateway/input/resume/' + card.dataset.worker, {method:'POST'});
+        } else if (gatewayButton.dataset.gatewayAction === 'chat') {
+          const input = card.querySelector('[data-command]');
+          const message = input.value.trim();
+          if (!message) return;
+          response = await apiFetch('/api/gateway/input/chat/' + card.dataset.worker, {
+            method:'POST',
+            body:message
+          });
+          if (response.ok) input.value = '';
         }
         if (response && !response.ok) alert(await response.text());
         refresh();
@@ -345,15 +356,7 @@ public final class DashboardPage {
       if (!button) return;
       const card = button.closest('[data-worker]');
       const actionName = button.dataset.action;
-      if (actionName === 'command') {
-        const input = card.querySelector('[data-command]');
-        const command = input.value.trim();
-        if (!command) return;
-        await apiFetch('/api/worker/' + card.dataset.worker + '/command', {method:'POST', body:command});
-        input.value = '';
-      } else {
-        await action(card.dataset.worker, actionName);
-      }
+      await action(card.dataset.worker, actionName);
     });
     document.getElementById('start-all').addEventListener('click', async () => { await apiFetch('/api/start-all',{method:'POST'}); refresh(); });
     document.getElementById('stop-all').addEventListener('click', async () => { await apiFetch('/api/stop-all',{method:'POST'}); refresh(); });

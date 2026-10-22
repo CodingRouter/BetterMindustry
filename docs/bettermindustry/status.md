@@ -1,8 +1,8 @@
 # 当前状态与交接
 
 - 最后更新：2026-10-22
-- 当前分支：`feat/m1b-input-routing`
-- 当前阶段：M1B 多 Client Session 和输入授权链已完成
+- 当前分支：`feat/m1b-control-chain-checkpoint`
+- 当前阶段：M1B-ControlChain 检查点已完成
 - 当前里程碑：M1A 完成，M1B 原型进行中
 
 ## 已完成
@@ -27,6 +27,8 @@
 - Focus Sector 支持 15 秒控制权租约、竞争拒绝、续约和自动过期。
 - 每个 Client ID 独立维护 Focus 和 WorldView，Gateway 合并有效采样模式。
 - Focus 控制租约已接入固定 `status` 测试输入，观察者和无租约请求会被拒绝。
+- 受控输入支持 pause/resume/chat，并写入 Gateway 审计。
+- 普通 UI 已移除绕过 Gateway 的原始命令框。
 
 ## 当前架构决定
 

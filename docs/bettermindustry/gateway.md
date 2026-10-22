@@ -67,13 +67,16 @@ X-BM-Client-Id: <client-id>
 
 ## 输入授权
 
-当前提供一个低风险的测试输入：
+受控输入 v1 提供：
 
 ```text
 POST /api/gateway/input/status/{sectorId}
+POST /api/gateway/input/pause/{sectorId}
+POST /api/gateway/input/resume/{sectorId}
+POST /api/gateway/input/chat/{sectorId}
 ```
 
-它只会向目标 Worker 发送固定命令 `status`，用于验证完整控制链。
+`chat` 请求体是聊天内容；换行和控制字符会被清理，长度限制为 150 字符。
 
 允许执行必须同时满足：
 
@@ -86,7 +89,12 @@ POST /api/gateway/input/status/{sectorId}
 - 无租约：403。
 - 观察者：403。
 - Focus 不匹配：403。
-- 租约持有者：200，并实际向 Worker 发送 `status`。
+- 租约持有者：200，并实际向 Worker 发送对应命令。
+
+成功输入会写入：
+
+- Gateway 内存审计环形缓冲区。
+- `bettermindustry/runtime/gateway-audit.log`。
 
 当前不开放移动、建造或任意服务端命令；这些能力必须经过同一授权函数和后续输入验证。
 
@@ -149,7 +157,7 @@ POST /api/gateway/views/sector-a/SUMMARY
 ## 限制
 
 - 当前是 Web 调试客户端，不是最终 Mindustry 桌面客户端。
-- 输入路由目前只开放固定 `status` 测试命令，尚未接入移动、建造或任意服务端命令。
+- 输入路由目前只开放固定的 pause/resume/chat/status 命令；普通 UI 不再提供原始 Worker 命令框。
 - 客户端 ID 尚未绑定真正的用户认证。
 - 还没有跨 Sector 传送。
 - 采样策略是固定配置，尚未支持按客户端带宽动态调整。

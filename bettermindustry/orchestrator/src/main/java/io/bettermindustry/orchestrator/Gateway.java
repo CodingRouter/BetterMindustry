@@ -8,7 +8,12 @@ import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.time.Instant;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 
@@ -21,6 +26,7 @@ public final class Gateway {
     private final Path stateFile;
     private final LinkedHashMap<String, SessionState> sessions = new LinkedHashMap<>();
     private final LinkedHashMap<String, ControlLease> leases = new LinkedHashMap<>();
+    private final ArrayDeque<InputAudit> inputAudits = new ArrayDeque<>();
 
     public Gateway(WorkerManager manager, Path stateFile) {
         this.manager = manager;
@@ -127,6 +133,29 @@ public final class Gateway {
         return manager.find(sectorId);
     }
 
+    public synchronized void recordInput(String clientId, String sectorId, String command, String detail) {
+        InputAudit audit = new InputAudit(
+            Instant.now().toEpochMilli(),
+            normalizeClientId(clientId),
+            sectorId,
+            command,
+            detail == null ? "" : detail
+        );
+        inputAudits.addFirst(audit);
+        while (inputAudits.size() > 100) inputAudits.removeLast();
+
+        Path auditFile = stateFile.resolveSibling("gateway-audit.log");
+        try {
+            Path parent = auditFile.getParent();
+            if (parent != null) Files.createDirectories(parent);
+            String line = audit.timestampMillis() + "\t" + audit.clientId() + "\t"
+                + audit.sectorId() + "\t" + audit.command() + "\t" + audit.detail() + System.lineSeparator();
+            Files.writeString(auditFile, line, StandardCharsets.UTF_8,
+                StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+        } catch (IOException ignored) {
+        }
+    }
+
     public synchronized Snapshot snapshot(String clientId) {
         long now = System.currentTimeMillis();
         expireLeases(now);
@@ -141,7 +170,8 @@ public final class Gateway {
             effectiveViews(),
             lease == null ? null : lease.ownerId,
             lease == null ? 0 : lease.expiresAtMillis,
-            remaining
+            remaining,
+            List.copyOf(new ArrayList<>(inputAudits))
         );
     }
 
@@ -323,6 +353,15 @@ public final class Gateway {
     private record ControlLease(String ownerId, long expiresAtMillis) {
     }
 
+    public record InputAudit(
+        long timestampMillis,
+        String clientId,
+        String sectorId,
+        String command,
+        String detail
+    ) {
+    }
+
     public record Snapshot(
         String clientId,
         String focusSectorId,
@@ -330,7 +369,8 @@ public final class Gateway {
         Map<String, ViewMode> effectiveViews,
         String controlOwnerId,
         long controlExpiresAtMillis,
-        long controlExpiresInMillis
+        long controlExpiresInMillis,
+        List<InputAudit> recentInputs
     ) {
     }
 }
