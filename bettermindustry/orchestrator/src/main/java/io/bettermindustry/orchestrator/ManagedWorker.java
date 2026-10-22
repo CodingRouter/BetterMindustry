@@ -5,6 +5,8 @@ import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
+import java.net.InetSocketAddress;
+import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -13,6 +15,8 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class ManagedWorker {
     public enum State {
@@ -33,6 +37,13 @@ public class ManagedWorker {
     private volatile Instant startedAt;
     private volatile Instant stoppedAt;
     private volatile int exitCode = Integer.MIN_VALUE;
+    private volatile boolean portOpen;
+    private volatile long lastPortProbeNanos;
+    private volatile long lastDiagnosticRequestNanos;
+    private volatile long lastWorldRequestNanos;
+    private volatile long worldSnapshotUpdatedNanos;
+    private volatile double worldSnapshotTick = -1;
+    private volatile Diagnostics diagnostics;
     private BufferedWriter stdin;
 
     public ManagedWorker(WorkerConfig config, Path serverJar) {
@@ -60,6 +71,12 @@ public class ManagedWorker {
             startupSent = false;
             exitCode = Integer.MIN_VALUE;
             stoppedAt = null;
+            diagnostics = null;
+            lastPortProbeNanos = 0;
+            lastDiagnosticRequestNanos = 0;
+            lastWorldRequestNanos = 0;
+            worldSnapshotUpdatedNanos = 0;
+            worldSnapshotTick = -1;
             state = State.STARTING;
             startedAt = Instant.now();
 
@@ -135,12 +152,30 @@ public class ManagedWorker {
     }
 
     public Snapshot snapshot() {
+        requestDiagnosticsIfDue();
+        requestWorldSnapshotIfDue();
         List<String> tail;
         synchronized (logs) {
             int from = Math.max(0, logs.size() - MAX_LOG_LINES);
             tail = new ArrayList<>(logs.subList(from, logs.size()));
         }
         Process current = process;
+        boolean listening = probePort();
+        if (listening && !portOpen) {
+            addLog("Port " + config.port() + " is listening");
+        }
+        portOpen = listening;
+        boolean worldDataAvailable = Files.isRegularFile(config.worldImage())
+            && Files.isRegularFile(config.worldMetadata());
+        long worldSnapshotAgeMillis = worldSnapshotUpdatedNanos == 0 ? -1
+            : (System.nanoTime() - worldSnapshotUpdatedNanos) / 1_000_000L;
+        long worldSnapshotVersion = -1;
+        if (worldDataAvailable) {
+            try {
+                worldSnapshotVersion = Files.getLastModifiedTime(config.worldMetadata()).toMillis();
+            } catch (IOException ignored) {
+            }
+        }
         return new Snapshot(
             config.id(),
             config.map(),
@@ -151,7 +186,13 @@ public class ManagedWorker {
             current == null ? null : current.pid(),
             startedAt == null ? 0 : Duration.between(startedAt, Instant.now()).toSeconds(),
             exitCode == Integer.MIN_VALUE ? null : exitCode,
+            listening,
             Files.isRegularFile(config.checkpoint()),
+            diagnostics,
+            worldDataAvailable,
+            worldSnapshotTick,
+            worldSnapshotAgeMillis,
+            worldSnapshotVersion,
             tail
         );
     }
@@ -162,6 +203,16 @@ public class ManagedWorker {
             String line;
             while ((line = reader.readLine()) != null) {
                 String clean = stripAnsi(line);
+                int diagnosticStart = clean.indexOf("BMSTATUS ");
+                if (diagnosticStart >= 0) {
+                    updateDiagnostics(clean.substring(diagnosticStart + "BMSTATUS ".length()));
+                    continue;
+                }
+                int worldStart = clean.indexOf("BMWORLD ");
+                if (worldStart >= 0) {
+                    updateWorldSnapshot(clean.substring(worldStart + "BMWORLD ".length()));
+                    continue;
+                }
                 addLog(clean);
                 if (!startupSent && clean.contains("Server loaded.")) {
                     startupSent = true;
@@ -190,6 +241,59 @@ public class ManagedWorker {
         }
     }
 
+    private void requestDiagnosticsIfDue() {
+        Process current = process;
+        if (current == null || !current.isAlive()) return;
+        long now = System.nanoTime();
+        if (now - lastDiagnosticRequestNanos >= 1_000_000_000L) {
+            lastDiagnosticRequestNanos = now;
+            writeCommand("bmstatus", false);
+        }
+    }
+
+    private void requestWorldSnapshotIfDue() {
+        Process current = process;
+        if (current == null || !current.isAlive()) return;
+        long now = System.nanoTime();
+        if (now - lastWorldRequestNanos >= 2_000_000_000L) {
+            lastWorldRequestNanos = now;
+            writeCommand("bmworld", false);
+        }
+    }
+
+    private void updateWorldSnapshot(String value) {
+        try {
+            String token = value.trim().split("\\s+")[0];
+            worldSnapshotTick = Double.parseDouble(token);
+            worldSnapshotUpdatedNanos = System.nanoTime();
+        } catch (RuntimeException e) {
+            addLog("Failed to parse bmworld: " + e.getMessage());
+        }
+    }
+
+    private void updateDiagnostics(String json) {
+        try {
+            diagnostics = new Diagnostics(
+                number(json, "tick"),
+                number(json, "gameTimeSeconds"),
+                integer(json, "updateId"),
+                integer(json, "wave"),
+                number(json, "waveTimeSeconds"),
+                bool(json, "paused"),
+                bool(json, "gameOver"),
+                bool(json, "playing"),
+                integer(json, "players"),
+                integer(json, "units"),
+                integer(json, "enemies"),
+                integer(json, "buildings"),
+                string(json, "map"),
+                Instant.now()
+            );
+        } catch (RuntimeException e) {
+            addLog("Failed to parse bmstatus: " + e.getMessage());
+        }
+    }
+
     private void waitForExit(Process source) {
         try {
             int code = source.waitFor();
@@ -199,9 +303,11 @@ public class ManagedWorker {
                 stoppedAt = Instant.now();
                 if (stopRequested) {
                     state = State.STOPPED;
+                    portOpen = false;
                     addLog("Worker stopped with exit code " + code);
                 } else {
                     state = State.FAILED;
+                    portOpen = false;
                     addLog("Worker exited unexpectedly with code " + code);
                 }
             }
@@ -214,6 +320,61 @@ public class ManagedWorker {
         synchronized (logs) {
             logs.add(line);
             while (logs.size() > MAX_LOG_LINES) logs.remove(0);
+        }
+    }
+
+    private void writeCommand(String command, boolean echo) {
+        if (command == null || command.isBlank()) return;
+        Process current = process;
+        if (current == null || !current.isAlive() || stdin == null) return;
+        String line = command.replace("\r", "").replace("\n", " ").trim();
+        try {
+            stdin.write(line);
+            stdin.newLine();
+            stdin.flush();
+            if (echo) addLog("> " + line);
+        } catch (IOException e) {
+            addLog("Failed to send command: " + e.getMessage());
+        }
+    }
+
+    private static double number(String json, String key) {
+        Matcher matcher = fieldPattern(key).matcher(json);
+        if (!matcher.find()) throw new IllegalArgumentException("missing numeric field: " + key);
+        return Double.parseDouble(matcher.group(1));
+    }
+
+    private static int integer(String json, String key) {
+        return (int) number(json, key);
+    }
+
+    private static boolean bool(String json, String key) {
+        Matcher matcher = fieldPattern(key).matcher(json);
+        if (!matcher.find()) throw new IllegalArgumentException("missing boolean field: " + key);
+        return Boolean.parseBoolean(matcher.group(1));
+    }
+
+    private static String string(String json, String key) {
+        Matcher matcher = Pattern.compile("\"" + Pattern.quote(key) + "\":\"([^\"]*)\"").matcher(json);
+        if (!matcher.find()) throw new IllegalArgumentException("missing string field: " + key);
+        return matcher.group(1);
+    }
+
+    private static Pattern fieldPattern(String key) {
+        return Pattern.compile("\"" + Pattern.quote(key) + "\":([-0-9.eE]+|true|false)");
+    }
+
+    private boolean probePort() {
+        Process current = process;
+        if (current == null || !current.isAlive()) return false;
+        long now = System.nanoTime();
+        if (now - lastPortProbeNanos < 1_000_000_000L) return portOpen;
+        lastPortProbeNanos = now;
+        try (Socket socket = new Socket()) {
+            socket.connect(new InetSocketAddress("127.0.0.1", config.port()), 250);
+            return true;
+        } catch (IOException ignored) {
+            return false;
         }
     }
 
@@ -231,8 +392,32 @@ public class ManagedWorker {
         Long pid,
         long uptimeSeconds,
         Integer exitCode,
+        boolean portOpen,
         boolean checkpoint,
+        Diagnostics diagnostics,
+        boolean worldDataAvailable,
+        double worldSnapshotTick,
+        long worldSnapshotAgeMillis,
+        long worldSnapshotVersion,
         List<String> logs
+    ) {
+    }
+
+    public record Diagnostics(
+        double tick,
+        double gameTimeSeconds,
+        long updateId,
+        int wave,
+        double waveTimeSeconds,
+        boolean paused,
+        boolean gameOver,
+        boolean playing,
+        int players,
+        int units,
+        int enemies,
+        int buildings,
+        String map,
+        Instant receivedAt
     ) {
     }
 }

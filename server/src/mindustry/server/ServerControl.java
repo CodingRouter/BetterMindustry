@@ -3,6 +3,7 @@ package mindustry.server;
 import arc.*;
 import arc.files.*;
 import arc.func.*;
+import arc.graphics.*;
 import arc.struct.*;
 import arc.util.*;
 import arc.util.Timer;
@@ -29,6 +30,7 @@ import mindustry.net.Administration.*;
 import mindustry.net.Packets.*;
 import mindustry.net.*;
 import mindustry.type.*;
+import mindustry.world.*;
 import org.jline.reader.*;
 import org.jline.reader.impl.completer.*;
 import org.jline.terminal.*;
@@ -46,6 +48,14 @@ import static mindustry.Vars.*;
 
 public class ServerControl implements ApplicationListener{
     protected static String[] tags = {"&lc&fb[D]&fr", "&lb&fb[I]&fr", "&ly&fb[W]&fr", "&lr&fb[E]", ""};
+    private static final int[] mapFallbackColors = {
+        Color.valueOf("39534a").rgba(), Color.valueOf("4f6650").rgba(),
+        Color.valueOf("6b7055").rgba(), Color.valueOf("8b8164").rgba(),
+        Color.valueOf("31535f").rgba(), Color.valueOf("3d6870").rgba(),
+        Color.valueOf("5d7470").rgba(), Color.valueOf("756c59").rgba(),
+        Color.valueOf("5d4a3d").rgba(), Color.valueOf("72563f").rgba(),
+        Color.valueOf("876b4d").rgba(), Color.valueOf("9a8467").rgba()
+    };
     protected static DateTimeFormatter dateTime = DateTimeFormatter.ofPattern("MM-dd-yyyy HH:mm:ss"),
         autosaveDate = DateTimeFormatter.ofPattern("MM-dd-yyyy_HH-mm-ss");
 
@@ -636,6 +646,91 @@ public class ServerControl implements ApplicationListener{
                     info("  No players connected.");
                 }
             }
+        });
+
+        handler.register("bmstatus", "Print one-line BetterMindustry worker diagnostics.", arg -> {
+            String mapName = state.map == null ? "" : state.map.plainName();
+            mapName = mapName.replace("\\", "\\\\").replace("\"", "\\\"").replace("@", "\\u0040");
+            String json = "{"
+                + "\"tick\":" + state.tick
+                + ",\"gameTimeSeconds\":" + (state.tick / 60.0)
+                + ",\"updateId\":" + state.updateId
+                + ",\"wave\":" + state.wave
+                + ",\"waveTimeSeconds\":" + (state.wavetime / 60f)
+                + ",\"paused\":" + state.isPaused()
+                + ",\"gameOver\":" + state.gameOver
+                + ",\"playing\":" + state.isPlaying()
+                + ",\"players\":" + Groups.player.size()
+                + ",\"units\":" + Groups.unit.size()
+                + ",\"enemies\":" + state.enemies
+                + ",\"buildings\":" + Groups.build.size()
+                + ",\"map\":\"" + mapName + "\""
+                + "}";
+            info("BMSTATUS @", json);
+        });
+
+        handler.register("bmworld", "Write a compact world preview and entity snapshot.", arg -> {
+            if(state.isMenu()){
+                err("Not playing. Host first.");
+                return;
+            }
+
+            String mapName = state.map == null ? "" : state.map.plainName();
+            mapName = mapName.replace("\\", "\\\\").replace("\"", "\\\"").replace("@", "\\u0040");
+            StringBuilder json = new StringBuilder(256);
+            json.append('{');
+            json.append("\"tick\":").append(state.tick).append(',');
+            json.append("\"gameTimeSeconds\":").append(state.tick / 60.0).append(',');
+            json.append("\"updateId\":").append(state.updateId).append(',');
+            json.append("\"map\":\"").append(mapName).append("\",");
+            json.append("\"width\":").append(world.width()).append(',');
+            json.append("\"height\":").append(world.height()).append(',');
+            json.append("\"units\":[");
+            int index = 0;
+            for(Unit unit : Groups.unit){
+                if(index++ > 0) json.append(',');
+                json.append("{\"id\":").append(unit.id())
+                    .append(",\"x\":").append(unit.x)
+                    .append(",\"y\":").append(unit.y)
+                    .append(",\"rotation\":").append(unit.rotation)
+                    .append(",\"type\":").append(unit.type.id)
+                    .append(",\"team\":").append(unit.team.id)
+                    .append(",\"health\":").append(unit.health)
+                    .append('}');
+            }
+            json.append("],\"buildings\":[");
+            index = 0;
+            for(Building build : Groups.build){
+                if(index++ > 0) json.append(',');
+                json.append("{\"id\":").append(build.id())
+                    .append(",\"x\":").append(build.x)
+                    .append(",\"y\":").append(build.y)
+                    .append(",\"tileX\":").append(build.tileX())
+                    .append(",\"tileY\":").append(build.tileY())
+                    .append(",\"rotation\":").append(build.rotation)
+                    .append(",\"block\":").append(build.block.id)
+                    .append(",\"team\":").append(build.team.id)
+                    .append(",\"health\":").append(build.health)
+                    .append(",\"maxHealth\":").append(build.maxHealth())
+                    .append('}');
+            }
+            json.append("]}");
+
+            dataDirectory.child("bmworld.json").writeString(json.toString());
+            var pixmap = new Pixmap(world.width(), world.height());
+            for(Tile tile : world.tiles){
+                int color = MapIO.colorFor(tile.block(), tile.floor(), tile.overlay(), tile.team());
+                if((color >>> 8) == 0){
+                    int seed = tile.block().id == 0
+                        ? tile.floor().id * 31 + tile.overlay().id * 17
+                        : tile.block().id * 47 + tile.floor().id * 31;
+                    color = mapFallbackColors[Math.floorMod(seed, mapFallbackColors.length)];
+                }
+                pixmap.set(tile.x, world.height() - 1 - tile.y, color);
+            }
+            dataDirectory.child("bmworld.png").writePng(pixmap);
+            pixmap.dispose();
+            info("BMWORLD @", state.tick);
         });
 
         handler.register("mods", "Display all loaded mods.", arg -> {

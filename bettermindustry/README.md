@@ -19,4 +19,9 @@ bettermindustry/
 - 世界进程启动器只负责受控启动和适配，不复制 Mindustry 模拟逻辑。
 - 所有模块使用独立测试，并逐步加入 Gradle。
 
-当前不新增 Gradle 子项目，避免在构建基线验证前改变上游构建图。M1 开始实现双世界启动器时再加入最小模块。
+当前独立 Gradle 模块：
+
+- `orchestrator`：Worker 启停、Web 调试器、快照流。
+- `protocol`：版本化 Render Frame。
+
+两者与 Mindustry 核心构建分离，避免控制层修改污染上游模块。

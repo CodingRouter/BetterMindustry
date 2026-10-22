@@ -1,6 +1,7 @@
 package io.bettermindustry.orchestrator;
 
 import java.nio.file.Path;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -9,26 +10,17 @@ import java.util.Map;
 
 public class WorkerManager {
     private final Path projectRoot;
+    private final Path catalogFile;
     private final Path serverJar;
     private final Map<String, ManagedWorker> workers = new LinkedHashMap<>();
 
-    public WorkerManager(Path projectRoot) {
+    public WorkerManager(Path projectRoot, Path catalogFile) throws IOException {
         this.projectRoot = projectRoot.toAbsolutePath().normalize();
         this.serverJar = this.projectRoot.resolve("server/build/libs/server-release.jar");
-
-        Path runtime = this.projectRoot.resolve("bettermindustry/runtime/debugger");
-        register(new WorkerConfig(
-            "sector-a",
-            "wasteland",
-            16567,
-            runtime.resolve("sector-a")
-        ));
-        register(new WorkerConfig(
-            "sector-b",
-            "veins",
-            16568,
-            runtime.resolve("sector-b")
-        ));
+        this.catalogFile = catalogFile.toAbsolutePath().normalize();
+        for (WorkerConfig config : WorkerCatalog.load(this.projectRoot, this.catalogFile)) {
+            register(config);
+        }
     }
 
     public Path projectRoot() {
@@ -37,6 +29,10 @@ public class WorkerManager {
 
     public Path serverJar() {
         return serverJar;
+    }
+
+    public Path catalogFile() {
+        return catalogFile;
     }
 
     public Collection<ManagedWorker> workers() {

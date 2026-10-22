@@ -1,5 +1,7 @@
 # Contributing
 
+> **BetterMindustry note:** This file is inherited from Mindustry v160.7. It applies to contributions submitted to `Anuken/Mindustry`. For PRs targeting `CodingRouter/BetterMindustry`, use [`docs/bettermindustry/workflow.md`](docs/bettermindustry/workflow.md) and the repository PR template instead. The Mindustry AI Policy below applies only when contributing upstream.
+
 This is for code contributions. For translations, see [TRANSLATING](TRANSLATING.md).
 
 ## Basic Guidelines

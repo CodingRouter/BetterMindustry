@@ -1,9 +1,9 @@
 # 当前状态与交接
 
 - 最后更新：2026-10-22
-- 当前分支：`main`
+- 当前分支：`spike/m1-worker-supervisor`
 - 当前阶段：M1A 双世界手工实验通过，Web 调试器已可用（已停止，等待下次启动）
-- 当前里程碑：M0 上游基线已完成
+- 当前里程碑：M1 进行中；M0 基线已完成
 
 ## 已完成
 
@@ -15,6 +15,10 @@
 - 服务端 JAR 已实际启动并正常退出。
 - 项目入口、路线图、总体架构、风险、ADR 和开发流程已建立。
 - 本地 Web 调试器可显示两个真实 Worker 的状态、日志和命令。
+- Worker 列表已改为配置驱动，并加入真实 TCP 端口探测。
+- Worker 已提供 `bmstatus` 结构化 Tick 诊断，调试器实时显示。
+- 已提供 `bettermindustry.render.v1` 单帧端点和 20 Hz SSE 快照流。
+- Server Worker 已生成地图 PNG、单位和建筑 JSON，浏览器 Canvas 已能显示真实地图缩略图。
 
 ## 当前架构决定
 
@@ -31,17 +35,17 @@
 M1：精确 Sector Actor 原型。
 
 1. 定义 `SectorId`、Sector 状态机和最小宇宙清单。
-2. 将调试器从固定两个 Worker 扩展为配置驱动的世界清单。
-3. 增加 TCP 端口探测和明确的进程退出原因。
-4. 增加游戏 Tick 诊断命令，显示 `state.tick`、波次和更新时间。
-5. 设计 Render Tick 独立进程的快照订阅协议。
+2. 在 Canvas 上绘制单位和建筑覆盖层，加入实体插值。
+3. 验证双 Worker 的 Tick 连续性、恢复和长期运行。
+4. 增加生产吞吐与瓶颈诊断。
 
 双世界手工实验记录见 `docs/bettermindustry/spikes/0001-two-worker-manual.md`。
 调试器说明见 `docs/bettermindustry/tools/debugger.md`。
+诊断协议见 `docs/bettermindustry/diagnostics.md`。
+Render 快照流见 `docs/bettermindustry/render-stream.md`。
 
 ## 未决问题
 
-- 在线仓库账号、组织、仓库名和可见性。
 - 多区块画面最终是独立视口，还是需要无缝地理拼接。
 - 首个部署目标是 Windows 本地服务器还是 Linux 容器。
 - 多视口 MVP 的初始上限和最低硬件目标。

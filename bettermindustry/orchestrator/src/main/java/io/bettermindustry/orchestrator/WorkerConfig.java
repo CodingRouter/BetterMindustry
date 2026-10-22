@@ -17,4 +17,12 @@ public record WorkerConfig(String id, String map, int port, Path runtimeDir) {
     public Path logFile() {
         return runtimeDir.resolve("debugger-worker.log");
     }
+
+    public Path worldImage() {
+        return runtimeDir.resolve("config/bmworld.png");
+    }
+
+    public Path worldMetadata() {
+        return runtimeDir.resolve("config/bmworld.json");
+    }
 }
