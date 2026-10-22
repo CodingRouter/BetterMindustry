@@ -16,6 +16,7 @@
 - 项目入口、路线图、总体架构、风险、ADR 和开发流程已建立。
 - 本地 Web 调试器可显示两个真实 Worker 的状态、日志和命令。
 - Worker 列表已改为配置驱动，并加入真实 TCP 端口探测。
+- Worker 已提供 `bmstatus` 结构化 Tick 诊断，调试器实时显示。
 
 ## 当前架构决定
 
@@ -32,12 +33,13 @@
 M1：精确 Sector Actor 原型。
 
 1. 定义 `SectorId`、Sector 状态机和最小宇宙清单。
-2. 增加游戏 Tick 诊断命令，显示 `state.tick`、波次和更新时间。
-3. 把诊断结果结构化显示在调试器 UI。
-4. 设计 Render Tick 独立进程的快照订阅协议。
+2. 设计 Render Tick 独立进程的只读快照订阅协议。
+3. 验证双 Worker 的 Tick 连续性、恢复和长期运行。
+4. 增加生产吞吐与瓶颈诊断。
 
 双世界手工实验记录见 `docs/bettermindustry/spikes/0001-two-worker-manual.md`。
 调试器说明见 `docs/bettermindustry/tools/debugger.md`。
+诊断协议见 `docs/bettermindustry/diagnostics.md`。
 
 ## 未决问题
 

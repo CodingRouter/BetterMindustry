@@ -7,6 +7,8 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Collection;
 import java.util.concurrent.Executors;
 
@@ -129,6 +131,29 @@ public class DashboardServer {
         json.append("\"exitCode\":").append(snapshot.exitCode() == null ? "null" : snapshot.exitCode()).append(',');
         json.append("\"portOpen\":").append(snapshot.portOpen()).append(',');
         json.append("\"checkpoint\":").append(snapshot.checkpoint()).append(',');
+        json.append("\"diagnostics\":");
+        ManagedWorker.Diagnostics diagnostics = snapshot.diagnostics();
+        if (diagnostics == null) {
+            json.append("null");
+        } else {
+            json.append('{');
+            json.append("\"tick\":").append(diagnostics.tick()).append(',');
+            json.append("\"gameTimeSeconds\":").append(diagnostics.gameTimeSeconds()).append(',');
+            json.append("\"updateId\":").append(diagnostics.updateId()).append(',');
+            json.append("\"wave\":").append(diagnostics.wave()).append(',');
+            json.append("\"waveTimeSeconds\":").append(diagnostics.waveTimeSeconds()).append(',');
+            json.append("\"paused\":").append(diagnostics.paused()).append(',');
+            json.append("\"gameOver\":").append(diagnostics.gameOver()).append(',');
+            json.append("\"playing\":").append(diagnostics.playing()).append(',');
+            json.append("\"players\":").append(diagnostics.players()).append(',');
+            json.append("\"units\":").append(diagnostics.units()).append(',');
+            json.append("\"enemies\":").append(diagnostics.enemies()).append(',');
+            json.append("\"buildings\":").append(diagnostics.buildings()).append(',');
+            json.append("\"map\":\"").append(escape(diagnostics.map())).append("\",");
+            json.append("\"ageMs\":").append(Duration.between(diagnostics.receivedAt(), Instant.now()).toMillis());
+            json.append('}');
+        }
+        json.append(',');
         json.append("\"logs\":[");
         for (int i = 0; i < snapshot.logs().size(); i++) {
             if (i > 0) json.append(',');

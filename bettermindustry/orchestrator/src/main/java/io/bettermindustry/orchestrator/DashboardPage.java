@@ -87,7 +87,7 @@ public final class DashboardPage {
 
       const meta = document.createElement('div');
       meta.className = 'meta';
-      [['进程 PID','pid'],['运行时长','uptime'],['退出码','exit'],['端口监听','portOpen'],['检查点','checkpoint'],['工作目录','runtime']].forEach(([label, field]) => {
+      [['进程 PID','pid'],['运行时长','uptime'],['退出码','exit'],['端口监听','portOpen'],['Game Tick','tick'],['游戏时间','gameTime'],['波次','wave'],['单位 / 建筑','entities'],['暂停','paused'],['检查点','checkpoint'],['工作目录','runtime']].forEach(([label, field]) => {
         const key = document.createElement('span');
         key.textContent = label;
         const value = document.createElement('strong');
@@ -138,6 +138,11 @@ public final class DashboardPage {
           set(card, 'uptime', w.alive ? w.uptimeSeconds + 's' : '-');
           set(card, 'exit', w.exitCode ?? '-');
           set(card, 'portOpen', w.portOpen ? 'listening' : 'closed');
+          set(card, 'tick', w.diagnostics ? Math.floor(w.diagnostics.tick) : '-');
+          set(card, 'gameTime', w.diagnostics ? formatTime(w.diagnostics.gameTimeSeconds) : '-');
+          set(card, 'wave', w.diagnostics ? w.diagnostics.wave : '-');
+          set(card, 'entities', w.diagnostics ? w.diagnostics.units + ' / ' + w.diagnostics.buildings : '-');
+          set(card, 'paused', w.diagnostics ? (w.diagnostics.paused ? 'yes' : 'no') : '-');
           set(card, 'checkpoint', w.checkpoint ? 'available' : 'none');
           set(card, 'runtime', w.runtimeDir);
           const logs = card.querySelector('[data-field="logs"]');
@@ -147,6 +152,14 @@ public final class DashboardPage {
       } catch (e) {
         document.getElementById('subtitle').textContent = '控制层离线：' + e.message;
       }
+    }
+    function formatTime(seconds) {
+      if (seconds == null) return '-';
+      const total = Math.floor(seconds);
+      const h = Math.floor(total / 3600);
+      const m = Math.floor((total % 3600) / 60);
+      const s = total % 60;
+      return (h ? h + ':' : '') + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
     }
     async function action(worker, name) {
       await fetch('/api/worker/' + worker + '/' + name, {method:'POST'});

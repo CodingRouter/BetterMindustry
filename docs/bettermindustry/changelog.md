@@ -13,6 +13,7 @@
 - 本地 Web Worker 调试器和启停/保存/命令 API。
 - Game Tick 与 Render Tick 分离的架构决策。
 - 配置驱动 Worker 清单和真实 TCP 端口探测。
+- `bmstatus` 结构化 Game Tick 诊断和面板指标。
 
 ### Next
 

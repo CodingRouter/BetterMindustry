@@ -51,6 +51,7 @@ sector-b.runtimeDir=bettermindustry/runtime/debugger/sector-b
 - Worker ID、地图和端口。
 - 进程状态、PID、运行时长和退出码。
 - 实际 TCP 端口监听状态。
+- `BMSTATUS` 结构化诊断：Game Tick、游戏时间、波次、暂停、玩家、单位、敌人和建筑数。
 - 独立检查点是否存在。
 - 服务端实时日志。
 - Game Tick 与计划中的 Render Tick 管线。
@@ -83,5 +84,6 @@ bettermindustry/runtime/debugger/
 - 调试器只观察 Game Tick Worker，不渲染地图。
 - Worker 配置目前使用 Java Properties 格式，尚未加入热重载和面板内增删。
 - 端口探测只确认 TCP 可连接，尚未执行应用层握手。
-- 尚未提供 `state.tick`、生产吞吐和单位统计的结构化诊断。
+- 诊断通过服务端控制命令请求，尚未改成常驻推送通道。
+- 生产吞吐、瓶颈和资源变化趋势尚未加入。
 - 渲染进程、场景订阅和多视口尚未接入。

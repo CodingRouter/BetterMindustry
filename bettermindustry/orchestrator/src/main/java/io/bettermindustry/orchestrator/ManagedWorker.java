@@ -15,6 +15,8 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class ManagedWorker {
     public enum State {
@@ -36,6 +38,8 @@ public class ManagedWorker {
     private volatile Instant stoppedAt;
     private volatile int exitCode = Integer.MIN_VALUE;
     private volatile boolean portOpen;
+    private volatile long lastDiagnosticRequestNanos;
+    private volatile Diagnostics diagnostics;
     private BufferedWriter stdin;
 
     public ManagedWorker(WorkerConfig config, Path serverJar) {
@@ -63,6 +67,8 @@ public class ManagedWorker {
             startupSent = false;
             exitCode = Integer.MIN_VALUE;
             stoppedAt = null;
+            diagnostics = null;
+            lastDiagnosticRequestNanos = 0;
             state = State.STARTING;
             startedAt = Instant.now();
 
@@ -138,6 +144,7 @@ public class ManagedWorker {
     }
 
     public Snapshot snapshot() {
+        requestDiagnosticsIfDue();
         List<String> tail;
         synchronized (logs) {
             int from = Math.max(0, logs.size() - MAX_LOG_LINES);
@@ -161,6 +168,7 @@ public class ManagedWorker {
             exitCode == Integer.MIN_VALUE ? null : exitCode,
             listening,
             Files.isRegularFile(config.checkpoint()),
+            diagnostics,
             tail
         );
     }
@@ -171,6 +179,11 @@ public class ManagedWorker {
             String line;
             while ((line = reader.readLine()) != null) {
                 String clean = stripAnsi(line);
+                int diagnosticStart = clean.indexOf("BMSTATUS ");
+                if (diagnosticStart >= 0) {
+                    updateDiagnostics(clean.substring(diagnosticStart + "BMSTATUS ".length()));
+                    continue;
+                }
                 addLog(clean);
                 if (!startupSent && clean.contains("Server loaded.")) {
                     startupSent = true;
@@ -196,6 +209,39 @@ public class ManagedWorker {
         } else {
             addLog("No checkpoint; hosting map " + config.map());
             sendCommand("host " + config.map() + " survival");
+        }
+    }
+
+    private void requestDiagnosticsIfDue() {
+        Process current = process;
+        if (current == null || !current.isAlive()) return;
+        long now = System.nanoTime();
+        if (now - lastDiagnosticRequestNanos >= 1_000_000_000L) {
+            lastDiagnosticRequestNanos = now;
+            writeCommand("bmstatus", false);
+        }
+    }
+
+    private void updateDiagnostics(String json) {
+        try {
+            diagnostics = new Diagnostics(
+                number(json, "tick"),
+                number(json, "gameTimeSeconds"),
+                integer(json, "updateId"),
+                integer(json, "wave"),
+                number(json, "waveTimeSeconds"),
+                bool(json, "paused"),
+                bool(json, "gameOver"),
+                bool(json, "playing"),
+                integer(json, "players"),
+                integer(json, "units"),
+                integer(json, "enemies"),
+                integer(json, "buildings"),
+                string(json, "map"),
+                Instant.now()
+            );
+        } catch (RuntimeException e) {
+            addLog("Failed to parse bmstatus: " + e.getMessage());
         }
     }
 
@@ -228,6 +274,47 @@ public class ManagedWorker {
         }
     }
 
+    private void writeCommand(String command, boolean echo) {
+        if (command == null || command.isBlank()) return;
+        Process current = process;
+        if (current == null || !current.isAlive() || stdin == null) return;
+        String line = command.replace("\r", "").replace("\n", " ").trim();
+        try {
+            stdin.write(line);
+            stdin.newLine();
+            stdin.flush();
+            if (echo) addLog("> " + line);
+        } catch (IOException e) {
+            addLog("Failed to send command: " + e.getMessage());
+        }
+    }
+
+    private static double number(String json, String key) {
+        Matcher matcher = fieldPattern(key).matcher(json);
+        if (!matcher.find()) throw new IllegalArgumentException("missing numeric field: " + key);
+        return Double.parseDouble(matcher.group(1));
+    }
+
+    private static int integer(String json, String key) {
+        return (int) number(json, key);
+    }
+
+    private static boolean bool(String json, String key) {
+        Matcher matcher = fieldPattern(key).matcher(json);
+        if (!matcher.find()) throw new IllegalArgumentException("missing boolean field: " + key);
+        return Boolean.parseBoolean(matcher.group(1));
+    }
+
+    private static String string(String json, String key) {
+        Matcher matcher = Pattern.compile("\"" + Pattern.quote(key) + "\":\"([^\"]*)\"").matcher(json);
+        if (!matcher.find()) throw new IllegalArgumentException("missing string field: " + key);
+        return matcher.group(1);
+    }
+
+    private static Pattern fieldPattern(String key) {
+        return Pattern.compile("\"" + Pattern.quote(key) + "\":([-0-9.eE]+|true|false)");
+    }
+
     private boolean probePort() {
         Process current = process;
         if (current == null || !current.isAlive()) return false;
@@ -255,7 +342,26 @@ public class ManagedWorker {
         Integer exitCode,
         boolean portOpen,
         boolean checkpoint,
+        Diagnostics diagnostics,
         List<String> logs
+    ) {
+    }
+
+    public record Diagnostics(
+        double tick,
+        double gameTimeSeconds,
+        long updateId,
+        int wave,
+        double waveTimeSeconds,
+        boolean paused,
+        boolean gameOver,
+        boolean playing,
+        int players,
+        int units,
+        int enemies,
+        int buildings,
+        String map,
+        Instant receivedAt
     ) {
     }
 }

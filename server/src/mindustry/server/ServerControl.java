@@ -638,6 +638,27 @@ public class ServerControl implements ApplicationListener{
             }
         });
 
+        handler.register("bmstatus", "Print one-line BetterMindustry worker diagnostics.", arg -> {
+            String mapName = state.map == null ? "" : state.map.plainName();
+            mapName = mapName.replace("\\", "\\\\").replace("\"", "\\\"").replace("@", "\\u0040");
+            String json = "{"
+                + "\"tick\":" + state.tick
+                + ",\"gameTimeSeconds\":" + (state.tick / 60.0)
+                + ",\"updateId\":" + state.updateId
+                + ",\"wave\":" + state.wave
+                + ",\"waveTimeSeconds\":" + (state.wavetime / 60f)
+                + ",\"paused\":" + state.isPaused()
+                + ",\"gameOver\":" + state.gameOver
+                + ",\"playing\":" + state.isPlaying()
+                + ",\"players\":" + Groups.player.size()
+                + ",\"units\":" + Groups.unit.size()
+                + ",\"enemies\":" + state.enemies
+                + ",\"buildings\":" + Groups.build.size()
+                + ",\"map\":\"" + mapName + "\""
+                + "}";
+            info("BMSTATUS @", json);
+        });
+
         handler.register("mods", "Display all loaded mods.", arg -> {
             if(!mods.list().isEmpty()){
                 info("Mods:");
