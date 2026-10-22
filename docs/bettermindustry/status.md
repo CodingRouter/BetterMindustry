@@ -1,9 +1,9 @@
 # 当前状态与交接
 
 - 最后更新：2026-10-22
-- 当前分支：`spike/m1-worker-supervisor`
-- 当前阶段：M1A 进程级验收通过，准备进入 M1B 多世界客户端
-- 当前里程碑：M1 进行中；M0 基线已完成
+- 当前分支：`feat/m1b-gateway`
+- 当前阶段：M1B Gateway 和浏览器多 WorldView 原型已完成
+- 当前里程碑：M1A 完成，M1B 原型进行中
 
 ## 已完成
 
@@ -20,6 +20,8 @@
 - 已提供 `bettermindustry.render.v1` 单帧端点和 20 Hz SSE 快照流。
 - Server Worker 已生成地图 PNG、单位和建筑 JSON，浏览器 Canvas 已能显示真实地图缩略图。
 - 两个 Worker 连续运行超过 10 分钟，故障隔离和控制层恢复通过。
+- Gateway 支持唯一 Focus Sector 和 FULL/SUMMARY/OFF 视口模式。
+- Render 协议升级为 `bettermindustry.render.v2`。
 
 ## 当前架构决定
 
@@ -33,12 +35,12 @@
 
 ## 下一步
 
-M1B：多世界客户端与 Gateway。
+M1B 后续：
 
-1. Gateway 按 `sectorId` 多路复用世界订阅。
-2. 建立客户端 `WorldView` 和 Focus Sector 控制权。
-3. 第一版支持两个独立视口，不要求无缝拼接。
-4. 继续完善单位/建筑覆盖层、实体插值和长期诊断。
+1. Gateway 状态持久化和多用户控制权租约。
+2. 将 Focus 路由到真实玩家输入。
+3. SUMMARY/OFF 降低 Worker 快照频率。
+4. 将浏览器 WorldView 迁移到真正的 Mindustry 桌面客户端。
 
 双世界手工实验记录见 `docs/bettermindustry/spikes/0001-two-worker-manual.md`。
 调试器说明见 `docs/bettermindustry/tools/debugger.md`。

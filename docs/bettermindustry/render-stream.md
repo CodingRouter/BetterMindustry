@@ -36,10 +36,11 @@ Content-Type: text/event-stream
 
 ```json
 {
-  "protocol": "bettermindustry.render.v1",
-  "protocolVersion": 1,
+  "protocol": "bettermindustry.render.v2",
+  "protocolVersion": 2,
   "sequence": 12,
   "renderTimeMillis": 1792638436685,
+  "focusSectorId": "sector-a",
   "authoritative": false,
   "worldDataAvailable": false,
   "sectors": [
@@ -59,7 +60,8 @@ Content-Type: text/event-stream
       "units": 0,
       "enemies": 0,
       "buildings": 1,
-      "diagnosticAgeMillis": 178
+      "diagnosticAgeMillis": 178,
+      "viewMode": "FULL"
     }
   ]
 }

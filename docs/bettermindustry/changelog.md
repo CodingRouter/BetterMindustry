@@ -19,6 +19,8 @@
 - 独立 BetterMindustry PR 模板和上游 AI Policy 适用边界说明。
 - M1A 双 Worker 连续运行、故障隔离、检查点和控制层恢复验收。
 - 修复 SSE 与总览并发调用导致的诊断命令交错。
+- Gateway Focus/WorldView 状态和 `bettermindustry.render.v2`。
+- 浏览器 FULL/SUMMARY/OFF 多视口原型。
 
 ### Next
 

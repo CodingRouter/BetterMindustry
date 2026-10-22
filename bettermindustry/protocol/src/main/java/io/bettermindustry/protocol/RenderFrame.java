@@ -6,9 +6,10 @@ public record RenderFrame(
     int protocolVersion,
     long sequence,
     long renderTimeMillis,
+    String focusSectorId,
     List<SectorFrame> sectors
 ) {
-    public static final int VERSION = 1;
+    public static final int VERSION = 2;
 
     public RenderFrame {
         sectors = List.copyOf(sectors);
@@ -21,6 +22,7 @@ public record RenderFrame(
         json.append("\"protocolVersion\":").append(protocolVersion).append(',');
         json.append("\"sequence\":").append(sequence).append(',');
         json.append("\"renderTimeMillis\":").append(renderTimeMillis).append(',');
+        json.append("\"focusSectorId\":\"").append(escape(focusSectorId)).append("\",");
         json.append("\"authoritative\":false,");
         json.append("\"worldDataAvailable\":")
             .append(sectors.stream().anyMatch(SectorFrame::worldDataAvailable)).append(',');
@@ -50,6 +52,7 @@ public record RenderFrame(
         int enemies,
         int buildings,
         long diagnosticAgeMillis,
+        String viewMode,
         boolean worldDataAvailable,
         double worldSnapshotTick,
         long worldSnapshotAgeMillis,
@@ -73,6 +76,7 @@ public record RenderFrame(
             json.append("\"enemies\":").append(enemies).append(',');
             json.append("\"buildings\":").append(buildings).append(',');
             json.append("\"diagnosticAgeMillis\":").append(diagnosticAgeMillis).append(',');
+            json.append("\"viewMode\":\"").append(escape(viewMode)).append("\",");
             json.append("\"worldDataAvailable\":").append(worldDataAvailable).append(',');
             json.append("\"worldSnapshotTick\":").append(worldSnapshotTick).append(',');
             json.append("\"worldSnapshotAgeMillis\":").append(worldSnapshotAgeMillis).append(',');

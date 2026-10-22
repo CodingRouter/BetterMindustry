@@ -16,17 +16,20 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class DashboardServer {
     private final WorkerManager manager;
+    private final Gateway gateway;
     private final int port;
     private final AtomicLong renderSequence = new AtomicLong();
     private HttpServer server;
 
     public DashboardServer(WorkerManager manager, int port) {
         this.manager = manager;
+        this.gateway = new Gateway(manager);
         this.port = port;
     }
 
@@ -37,6 +40,9 @@ public class DashboardServer {
         server.createContext("/api/render/snapshot", this::renderSnapshot);
         server.createContext("/api/render/stream", this::renderStream);
         server.createContext("/api/render/world/", this::renderWorld);
+        server.createContext("/api/gateway", this::gatewayState);
+        server.createContext("/api/gateway/focus/", this::gatewayFocus);
+        server.createContext("/api/gateway/views/", this::gatewayView);
         server.createContext("/api/start-all", exchange -> action(exchange, () -> manager.startAll()));
         server.createContext("/api/stop-all", exchange -> action(exchange, () -> manager.stopAll()));
         server.createContext("/api/worker/", this::workerAction);
@@ -75,6 +81,9 @@ public class DashboardServer {
         json.append("\"gameTick\":\"server-worker processes\",");
         json.append("\"renderTick\":\"planned separate process\",");
         json.append("\"transport\":\"not implemented\"},");
+        json.append("\"gateway\":");
+        appendGateway(json);
+        json.append(',');
         json.append("\"workers\":[");
         Collection<ManagedWorker> workers = manager.workers();
         int index = 0;
@@ -128,6 +137,7 @@ public class DashboardServer {
     }
 
     private RenderFrame createRenderFrame() {
+        Gateway.Snapshot gatewayState = gateway.snapshot();
         List<RenderFrame.SectorFrame> sectors = new ArrayList<>();
         for (ManagedWorker worker : manager.workers()) {
             ManagedWorker.Snapshot snapshot = worker.snapshot();
@@ -151,6 +161,7 @@ public class DashboardServer {
                 diagnostics == null ? 0 : diagnostics.enemies(),
                 diagnostics == null ? 0 : diagnostics.buildings(),
                 age,
+                gatewayState.views().getOrDefault(snapshot.id(), ViewMode.OFF).name(),
                 snapshot.worldDataAvailable(),
                 snapshot.worldSnapshotTick(),
                 snapshot.worldSnapshotAgeMillis(),
@@ -161,8 +172,73 @@ public class DashboardServer {
             RenderFrame.VERSION,
             renderSequence.incrementAndGet(),
             System.currentTimeMillis(),
+            gatewayState.focusSectorId(),
             sectors
         );
+    }
+
+    private void gatewayState(HttpExchange exchange) throws IOException {
+        if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+            send(exchange, 405, "Method not allowed", "text/plain; charset=utf-8");
+            return;
+        }
+        StringBuilder json = new StringBuilder();
+        appendGateway(json);
+        send(exchange, 200, json.toString(), "application/json; charset=utf-8");
+    }
+
+    private void gatewayFocus(HttpExchange exchange) throws IOException {
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            send(exchange, 405, "Method not allowed", "text/plain; charset=utf-8");
+            return;
+        }
+        String[] parts = exchange.getRequestURI().getPath().split("/");
+        if (parts.length != 5) {
+            send(exchange, 400, "Focus action requires a sector id", "text/plain; charset=utf-8");
+            return;
+        }
+        try {
+            gateway.setFocus(parts[4]);
+            StringBuilder json = new StringBuilder();
+            appendGateway(json);
+            send(exchange, 200, json.toString(), "application/json; charset=utf-8");
+        } catch (IllegalArgumentException e) {
+            send(exchange, 400, e.getMessage(), "text/plain; charset=utf-8");
+        }
+    }
+
+    private void gatewayView(HttpExchange exchange) throws IOException {
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            send(exchange, 405, "Method not allowed", "text/plain; charset=utf-8");
+            return;
+        }
+        String[] parts = exchange.getRequestURI().getPath().split("/");
+        if (parts.length != 6) {
+            send(exchange, 400, "View action requires sector id and mode", "text/plain; charset=utf-8");
+            return;
+        }
+        try {
+            gateway.setViewMode(parts[4], ViewMode.parse(parts[5]));
+            StringBuilder json = new StringBuilder();
+            appendGateway(json);
+            send(exchange, 200, json.toString(), "application/json; charset=utf-8");
+        } catch (IllegalArgumentException e) {
+            send(exchange, 400, e.getMessage(), "text/plain; charset=utf-8");
+        }
+    }
+
+    private void appendGateway(StringBuilder json) {
+        Gateway.Snapshot state = gateway.snapshot();
+        json.append('{');
+        json.append("\"focusSectorId\":\"").append(escape(state.focusSectorId())).append("\",");
+        json.append("\"views\":{");
+        int index = 0;
+        for (Map.Entry<String, ViewMode> entry : state.views().entrySet()) {
+            if (index++ > 0) json.append(',');
+            json.append('"').append(escape(entry.getKey())).append("\":\"")
+                .append(entry.getValue().name()).append('"');
+        }
+        json.append("}}");
     }
 
     private void renderWorld(HttpExchange exchange) throws IOException {
@@ -240,7 +316,7 @@ public class DashboardServer {
         send(exchange, 200, "{\"ok\":true}", "application/json; charset=utf-8");
     }
 
-    private static void appendSnapshot(StringBuilder json, ManagedWorker worker) {
+    private void appendSnapshot(StringBuilder json, ManagedWorker worker) {
         ManagedWorker.Snapshot snapshot = worker.snapshot();
         json.append('{');
         json.append("\"id\":\"").append(escape(snapshot.id())).append("\",");
@@ -254,6 +330,7 @@ public class DashboardServer {
         json.append("\"exitCode\":").append(snapshot.exitCode() == null ? "null" : snapshot.exitCode()).append(',');
         json.append("\"portOpen\":").append(snapshot.portOpen()).append(',');
         json.append("\"checkpoint\":").append(snapshot.checkpoint()).append(',');
+        json.append("\"viewMode\":\"").append(gateway.viewMode(snapshot.id()).name()).append("\",");
         json.append("\"diagnostics\":");
         ManagedWorker.Diagnostics diagnostics = snapshot.diagnostics();
         if (diagnostics == null) {
