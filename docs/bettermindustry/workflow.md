@@ -62,6 +62,18 @@ chore(repo): ignore local runtime data
 - 不提交构建产物、运行目录、存档、日志、密钥、令牌或大型生成文件。
 - 不修改已经共享的历史；不使用强制推送覆盖 `main`。
 
+## PR 检查清单
+
+BetterMindustry 内部 PR 使用 `.github/pull_request_template.md`，重点检查：
+
+- 变更目标是否单一。
+- 是否执行了相关构建、测试和运行验证。
+- 是否同步状态、变更记录或 ADR。
+- 是否混入构建产物、运行存档、日志、密钥或大型生成物。
+- 是否明确记录协议、存档兼容性和未验证风险。
+
+上游 Mindustry 的 `CONTRIBUTING.md` 和 AI Policy 只适用于向 `Anuken/Mindustry` 提交的 PR，不约束目标为 `CodingRouter/BetterMindustry` 的内部 PR。
+
 ## 验证与合并
 
 提交前至少执行与改动相关的验证：
