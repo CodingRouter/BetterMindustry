@@ -24,8 +24,19 @@ public final class DashboardPage {
     .toolbar { display:flex; gap:8px; }
     button { border:1px solid var(--line); background:#172536; color:var(--text); padding:9px 13px; border-radius:7px; cursor:pointer; font:inherit; }
     button:hover { border-color:var(--accent); background:#1d3146; }
+    button:disabled { opacity:.38; cursor:not-allowed; border-color:var(--line); background:#101923; }
     button.primary { border-color:#2b6c9c; background:#19415e; }
     button.danger { color:#ffd4d4; border-color:#613434; background:#3a2025; }
+    .session-pill { display:inline-flex; align-items:center; padding:8px 11px; border:1px solid #2a5a78; border-radius:999px; color:#9ed6ff; background:#102b3e; white-space:nowrap; }
+    dialog { width:min(460px,calc(100vw - 32px)); border:1px solid #2b4c69; border-radius:14px; background:#101d29; color:var(--text); box-shadow:0 24px 80px #000b; }
+    dialog::backdrop { background:#02060acc; backdrop-filter:blur(3px); }
+    .auth-form { display:grid; gap:11px; }
+    .auth-form h2 { margin:0 0 4px; font:700 22px ui-sans-serif,system-ui,sans-serif; }
+    .auth-form p { margin:0; color:var(--muted); font-size:12px; }
+    .auth-form label { display:grid; gap:5px; color:var(--muted); font-size:12px; }
+    .auth-form input { width:100%; border:1px solid var(--line); background:#09131d; color:var(--text); padding:10px; border-radius:7px; font:inherit; }
+    .auth-actions { display:flex; gap:8px; margin-top:4px; }
+    .auth-message { min-height:20px; color:var(--warn); }
     .pipeline { margin-top:18px; padding:14px 18px; border:1px solid var(--line); background:#0d1824cc; border-radius:12px; display:flex; align-items:center; gap:18px; flex-wrap:wrap; }
     .pipe-node { padding:10px 14px; border:1px solid #2b4c69; border-radius:8px; background:#122538; min-width:150px; }
     .pipe-node small { color:var(--muted); }
@@ -64,8 +75,8 @@ public final class DashboardPage {
 </head>
 <body>
   <header>
-    <div><h1>BetterMindustry Debugger</h1><div class="subtitle" id="subtitle">正在连接本地控制层…</div></div>
-    <div class="toolbar"><button class="primary" id="start-all">启动全部</button><button class="danger" id="stop-all">停止全部</button></div>
+    <div><h1>BetterMindustry Debugger</h1><div class="subtitle" id="subtitle">正在建立安全会话…</div></div>
+    <div class="toolbar"><span class="session-pill" id="session-role">GUEST</span><button id="login-button">登录 / 注册</button><button id="revoke-session">退出并重置</button><button class="primary" id="start-all">启动全部</button><button class="danger" id="stop-all">停止全部</button></div>
   </header>
   <section class="pipeline">
     <span class="pipe-node">Game Tick<br><small id="game-pipe-status">等待 Game Tick</small></span>
@@ -83,6 +94,20 @@ public final class DashboardPage {
   </section>
   <main id="workers"></main>
   <div class="footer">本地控制面板 · 仅监听 127.0.0.1 · 地图来自真实 Server Worker</div>
+  <dialog id="auth-dialog">
+    <form class="auth-form" method="dialog">
+      <h2>BetterMindustry 账户</h2>
+      <p>访客只能观察。PLAYER 可以控制 Sector；第一个注册账户会成为本地 ADMIN。</p>
+      <label>用户名<input id="auth-username" autocomplete="username" maxlength="32" placeholder="3-32 位字母、数字、_ 或 -"></label>
+      <label>密码<input id="auth-password" type="password" autocomplete="current-password" maxlength="128" placeholder="至少 10 个字符"></label>
+      <div class="auth-message" id="auth-message"></div>
+      <div class="auth-actions">
+        <button class="primary" id="auth-login" type="button">登录</button>
+        <button id="auth-register" type="button">注册</button>
+        <button value="cancel">关闭</button>
+      </div>
+    </form>
+  </dialog>
   <script>
     const cards = new Map();
     const worldVersions = new Map();
@@ -92,13 +117,56 @@ public final class DashboardPage {
     let latestRenderFrame = null;
     let latestGateway = null;
     let renderConnected = false;
-    const clientId = localStorage.getItem('bm-client-id') || (crypto.randomUUID ? crypto.randomUUID() : 'client-' + Date.now());
-    localStorage.setItem('bm-client-id', clientId);
+    let renderStream = null;
+    let clientId = null;
+    let currentRole = 'GUEST';
+    let currentUsername = null;
 
     async function apiFetch(url, options = {}) {
       const headers = new Headers(options.headers || {});
-      headers.set('X-BM-Client-Id', clientId);
-      return fetch(url, {...options, headers});
+      return fetch(url, {...options, headers, credentials:'same-origin'});
+    }
+
+    async function establishSession() {
+      let response = await fetch('/api/gateway/session', {
+        method:'GET',
+        credentials:'same-origin',
+        cache:'no-store'
+      });
+      if (response.status === 401) {
+        response = await fetch('/api/gateway/session', {
+          method:'POST',
+          credentials:'same-origin',
+          cache:'no-store'
+        });
+      }
+      if (!response.ok) throw new Error('无法建立 Client Session: HTTP ' + response.status);
+      const session = await response.json();
+      clientId = session.clientId;
+      currentRole = session.role || 'GUEST';
+      currentUsername = session.username || null;
+      updateIdentityUI();
+      return session;
+    }
+
+    function hasRole(required) {
+      const levels = {GUEST:0, PLAYER:1, ADMIN:2};
+      return (levels[currentRole] || 0) >= levels[required];
+    }
+    function updateIdentityUI() {
+      const label = currentUsername ? currentUsername + ' · ' + currentRole : 'GUEST';
+      document.getElementById('session-role').textContent = label;
+      document.getElementById('start-all').disabled = !hasRole('ADMIN');
+      document.getElementById('stop-all').disabled = !hasRole('ADMIN');
+      workersRoot.querySelectorAll('[data-action="start"],[data-action="stop"],[data-action="save"]').forEach(button => {
+        button.disabled = !hasRole('ADMIN');
+      });
+      workersRoot.querySelectorAll('[data-gateway-action="acquire"],[data-gateway-action="release"],[data-gateway-action="pause"],[data-gateway-action="resume"],[data-gateway-action="chat"]').forEach(button => {
+        button.disabled = !hasRole('PLAYER');
+      });
+      workersRoot.querySelectorAll('[data-command]').forEach(input => {
+        input.disabled = !hasRole('PLAYER');
+      });
     }
 
     function set(card, name, value) {
@@ -210,13 +278,17 @@ public final class DashboardPage {
       article.append(logs);
       workersRoot.append(article);
       cards.set(worker.id, article);
+      updateIdentityUI();
       return article;
     }
 
     async function refresh() {
       try {
-        const data = await apiFetch('/api/overview', {cache:'no-store'}).then(r => r.json());
-        document.getElementById('subtitle').textContent = 'Project: ' + data.projectRoot;
+        const response = await apiFetch('/api/overview', {cache:'no-store'});
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        const data = await response.json();
+        document.getElementById('subtitle').textContent = 'Project: ' + data.projectRoot
+          + ' · session ' + clientId.slice(0, 12) + '…';
         let running = 0, players = 0, units = 0, enemies = 0, buildings = 0;
         const gateway = data.gateway || {focusSectorId:'-', views:{}};
         latestGateway = gateway;
@@ -294,29 +366,40 @@ public final class DashboardPage {
       requestAnimationFrame(animate);
     }
     requestAnimationFrame(animate);
-    const renderStream = new EventSource('/api/render/stream?clientId=' + encodeURIComponent(clientId));
-    renderStream.addEventListener('render', event => {
-      renderConnected = true;
-      renderFrames++;
-      latestRenderFrame = JSON.parse(event.data);
-    });
-    renderStream.onerror = () => { renderConnected = false; };
-    setInterval(() => {
-      const latestTick = latestRenderFrame && latestRenderFrame.sectors.length
-        ? Math.max(...latestRenderFrame.sectors.map(s => s.gameTick))
-        : 0;
-      document.getElementById('game-pipe-status').textContent = latestRenderFrame
-        ? '帧 #' + latestRenderFrame.sequence + ' · tick ' + Math.floor(latestTick)
-        : '等待 Game Tick';
-      document.getElementById('render-pipe-status').textContent = (renderConnected ? 'render ' + displayFrames + ' fps' : '快照流断开')
-        + ' · snapshots ' + renderFrames + '/s';
-      renderFrames = 0;
-      displayFrames = 0;
-    }, 1000);
 
     async function action(worker, name) {
       await apiFetch('/api/worker/' + worker + '/' + name, {method:'POST'});
       refresh();
+    }
+    async function sendInputEnvelope(card, type, message = '') {
+      const sectorId = card.dataset.worker;
+      const sector = latestRenderFrame && latestRenderFrame.sectors.find(item => item.id === sectorId);
+      if (!sector || !Number.isFinite(sector.gameTick)) {
+        throw new Error('尚未收到 ' + sectorId + ' 的 Game Tick');
+      }
+      const expectedTick = Math.max(0, Math.floor(sector.gameTick));
+      const commandId = crypto.randomUUID
+        ? crypto.randomUUID()
+        : 'command-' + Date.now() + '-' + Math.random().toString(16).slice(2);
+      const envelope = {
+        protocolVersion: 1,
+        commandId,
+        sectorId,
+        expectedTick,
+        deadlineTick: expectedTick + 120,
+        type,
+        message
+      };
+      const request = () => apiFetch('/api/gateway/input/envelope', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(envelope)
+      });
+      try {
+        return await request();
+      } catch (networkError) {
+        return request();
+      }
     }
     workersRoot.addEventListener('click', async event => {
       const gatewayButton = event.target.closest('[data-gateway-action]');
@@ -335,17 +418,14 @@ public final class DashboardPage {
         } else if (gatewayButton.dataset.gatewayAction === 'release') {
           response = await apiFetch('/api/gateway/control/release/' + card.dataset.worker, {method:'POST'});
         } else if (gatewayButton.dataset.gatewayAction === 'pause') {
-          response = await apiFetch('/api/gateway/input/pause/' + card.dataset.worker, {method:'POST'});
+          response = await sendInputEnvelope(card, 'pause');
         } else if (gatewayButton.dataset.gatewayAction === 'resume') {
-          response = await apiFetch('/api/gateway/input/resume/' + card.dataset.worker, {method:'POST'});
+          response = await sendInputEnvelope(card, 'resume');
         } else if (gatewayButton.dataset.gatewayAction === 'chat') {
           const input = card.querySelector('[data-command]');
           const message = input.value.trim();
           if (!message) return;
-          response = await apiFetch('/api/gateway/input/chat/' + card.dataset.worker, {
-            method:'POST',
-            body:message
-          });
+          response = await sendInputEnvelope(card, 'chat', message);
           if (response.ok) input.value = '';
         }
         if (response && !response.ok) alert(await response.text());
@@ -358,15 +438,103 @@ public final class DashboardPage {
       const actionName = button.dataset.action;
       await action(card.dataset.worker, actionName);
     });
+    const authDialog = document.getElementById('auth-dialog');
+    const authUsername = document.getElementById('auth-username');
+    const authPassword = document.getElementById('auth-password');
+    const authMessage = document.getElementById('auth-message');
+
+    async function submitCredentials(url) {
+      const form = new URLSearchParams();
+      form.set('username', authUsername.value.trim());
+      form.set('password', authPassword.value);
+      return apiFetch(url, {
+        method:'POST',
+        headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        body:form.toString()
+      });
+    }
+    document.getElementById('login-button').addEventListener('click', () => {
+      authMessage.textContent = '';
+      authUsername.value = currentUsername || '';
+      authPassword.value = '';
+      authDialog.showModal();
+      authUsername.focus();
+    });
+    document.getElementById('auth-login').addEventListener('click', async () => {
+      const response = await submitCredentials('/api/gateway/session');
+      if (!response.ok) {
+        authMessage.textContent = await response.text();
+        return;
+      }
+      location.reload();
+    });
+    document.getElementById('auth-register').addEventListener('click', async () => {
+      const registration = await submitCredentials('/api/auth/register');
+      if (!registration.ok) {
+        authMessage.textContent = await registration.text();
+        return;
+      }
+      const account = await registration.json();
+      authMessage.textContent = '注册成功，角色 ' + account.role + '，正在登录…';
+      const login = await submitCredentials('/api/gateway/session');
+      if (!login.ok) {
+        authMessage.textContent = '注册成功，但登录失败：' + await login.text();
+        return;
+      }
+      location.reload();
+    });
+    authPassword.addEventListener('keydown', event => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        document.getElementById('auth-login').click();
+      }
+    });
+    document.getElementById('revoke-session').addEventListener('click', async () => {
+      if (!clientId || !confirm('销毁当前会话并释放它的控制权？页面会以新的访客身份重新加载。')) return;
+      if (renderStream) renderStream.close();
+      const response = await apiFetch('/api/gateway/session', {method:'DELETE'});
+      if (!response.ok) {
+        alert(await response.text());
+        return;
+      }
+      location.reload();
+    });
     document.getElementById('start-all').addEventListener('click', async () => { await apiFetch('/api/start-all',{method:'POST'}); refresh(); });
     document.getElementById('stop-all').addEventListener('click', async () => { await apiFetch('/api/stop-all',{method:'POST'}); refresh(); });
-    setInterval(async () => {
-      if (latestGateway && latestGateway.controlOwnerId === clientId && latestGateway.focusSectorId) {
-        await apiFetch('/api/gateway/control/renew/' + latestGateway.focusSectorId, {method:'POST'});
-      }
-    }, 5000);
-    refresh();
-    setInterval(refresh, 1000);
+
+    async function startDashboard() {
+      await establishSession();
+      renderStream = new EventSource('/api/render/stream');
+      renderStream.addEventListener('render', event => {
+        renderConnected = true;
+        renderFrames++;
+        latestRenderFrame = JSON.parse(event.data);
+      });
+      renderStream.onerror = () => { renderConnected = false; };
+      setInterval(() => {
+        const latestTick = latestRenderFrame && latestRenderFrame.sectors.length
+          ? Math.max(...latestRenderFrame.sectors.map(s => s.gameTick))
+          : 0;
+        document.getElementById('game-pipe-status').textContent = latestRenderFrame
+          ? '帧 #' + latestRenderFrame.sequence + ' · tick ' + Math.floor(latestTick)
+          : '等待 Game Tick';
+        document.getElementById('render-pipe-status').textContent = (renderConnected ? 'render ' + displayFrames + ' fps' : '快照流断开')
+          + ' · snapshots ' + renderFrames + '/s';
+        renderFrames = 0;
+        displayFrames = 0;
+      }, 1000);
+      setInterval(async () => {
+        if (latestGateway && latestGateway.controlOwnerId === clientId && latestGateway.focusSectorId) {
+          await apiFetch('/api/gateway/control/renew/' + latestGateway.focusSectorId, {method:'POST'});
+        }
+      }, 5000);
+      await refresh();
+      setInterval(refresh, 1000);
+    }
+
+    startDashboard().catch(error => {
+      document.getElementById('subtitle').textContent = '安全会话失败：' + error.message;
+    });
   </script>
 </body>
 </html>
