@@ -4,6 +4,7 @@
 
 | 日期 | 内容 |
 | --- | --- |
+| [2026-10-23 DesktopMultiView 检查点](2026-10-23-desktop-multiview-checkpoint.md) | Swing 桌面窗口、双地图、Cookie 修复与控制验收 |
 | [2026-10-22 AcknowledgedInput 检查点](2026-10-22-acknowledged-input-checkpoint.md) | Worker 执行确认、确认现场与失败回执 |
 | [2026-10-22 SessionSecurity 检查点](2026-10-22-session-security-checkpoint.md) | 登录限流、设备 Session 与管理员撤销 |
 | [2026-10-22 AccountsRoles 检查点](2026-10-22-accounts-roles-checkpoint.md) | 账户、PBKDF2、角色授权和检查点验收 |

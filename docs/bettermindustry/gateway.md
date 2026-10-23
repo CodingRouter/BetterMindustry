@@ -203,7 +203,9 @@ Cookie: bm_session=<token>
 
 - Worker 当前 Tick 超过 `deadlineTick` 时拒绝，HTTP 409。
 - `expectedTick` 最多允许比 Worker 当前 Tick 超前 120 Tick。
-- 当前调试客户端使用最近 Render 快照 Tick 作为 `expectedTick`，并把截止时间设为它之后 120 Tick。
+- 当前调试客户端使用最近 Render 快照 Tick 作为 `expectedTick`，并把截止时间设为它之后
+  6000 Tick。headless Worker 在当前测试环境中会以远高于现实时间的速度推进，窗口必须覆盖
+  快照采样延迟。
 
 聊天内容会去除控制字符、压缩连续空白并把首尾空白去掉，最多 150 个 Unicode 码点。
 

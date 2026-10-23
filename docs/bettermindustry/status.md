@@ -1,8 +1,8 @@
 # 当前状态与交接
 
-- 最后更新：2026-10-22
-- 当前分支：`feat/m1b-acknowledged-input-checkpoint`
-- 当前阶段：M1B-AcknowledgedInput 检查点已完成
+- 最后更新：2026-10-23
+- 当前分支：`feat/m1b-desktop-multiview`
+- 当前阶段：M1B-DesktopMultiView 检查点已完成
 - 当前里程碑：M1A 完成，M1B 原型进行中
 
 ## 已完成
@@ -55,12 +55,19 @@
 - Worker 新增 `bmaction` 管理动作和 `BMACTION` 执行确认。
 - Gateway 等待 Worker 确认后才返回 `APPLIED`，3 秒超时转为 `FAILED`。
 - 输入回执保存确认 Tick 和 paused 状态，重复回执保留原执行现场。
+- 新增独立 Swing Desktop MultiView 客户端模块。
+- 同一桌面窗口并排显示 sector-a 与 sector-b 的真实 Worker 地图。
+- 桌面客户端使用 Gateway Session，支持登录、Focus、控制租约和 pause/resume/release。
+- 桌面客户端提供 `--screenshot` 自渲染验收模式。
+- 修复 Java HttpClient 未持久化 SameSite Cookie 的问题。
+- 网页与桌面输入截止窗口扩大到 6000 Tick，适配当前高速 headless Worker。
 
 ## 本轮验证
 
 - `bettermindustry/protocol clean build`：通过，5 个测试全部通过。
 - `server:dist`：通过，包含新的 Worker `bmaction` 命令。
-- `bettermindustry/orchestrator clean build`：通过，19 个测试全部通过；两个模块共 24 个测试。
+- `bettermindustry/orchestrator clean build`：通过，19 个测试全部通过。
+- `bettermindustry/desktop-client clean build`：通过，4 个测试全部通过；三个模块共 28 个测试。
 - 两个真实 Worker 完成正常 pause/resume/chat、重复回执、命令冲突、过期窗口、错误 Focus、
   无租约、跨 Client 命令 ID 和超长聊天验收。
 - 重复投递没有重复执行或重复写审计。
@@ -96,6 +103,10 @@
 - 安全测试：GUEST 输入返回 403；未知动作、非法命令 ID、151 字符聊天均返回 400。
 - Chat 注入文本 `hello"; exit` 返回 APPLIED，Worker 和端口仍保持运行。
 - 同一 `commandId` 改成另一动作返回 409；Worker 停止后的回执持久化为 FAILED。
+- Desktop MultiView 窗口实际启动，标题为 `BetterMindustry · Desktop MultiView`。
+- 自渲染截图确认同一窗口并排显示 Tendrils/Wasteland 与 Veins 两个真实地图。
+- 桌面 GatewayClient 完成 GUEST→ADMIN 登录、切换 Focus、获取控制、pause/resume 和释放控制。
+- 截图验收发现并修复 Cookie 未持久化与 Tick 窗口过窄两个真实问题。
 
 ## 当前架构决定
 
@@ -111,17 +122,19 @@
 - 当前账户系统只用于本地调试；远程开放前必须增加受控管理员引导、密码恢复和账户管理。
 - 登录限流目前是单 Orchestrator 内存窗口，远程多实例前需要共享限流与审计存储。
 - Worker 确认超时为 3 秒；高延迟部署前需要把超时和重试策略能力化。
+- 当前桌面窗口使用 Worker PNG 快照，尚未嵌入 Mindustry World/Entity/Shader 场景。
+- 多视口目前固定并排、数量随 Worker 数量增长，尚未加入布局上限和性能降级。
 
 ## 下一步
 
 M1B 后续：
 
-1. 完成 M1B-AcknowledgedInput 检查点封存和安全测试。
-2. 下一阶段再评估受控移动、建造和单位命令。
-3. 为动作确认加入能力协商、超时配置和高延迟重试策略。
-4. 将单进程登录限流迁移到多实例可共享的存储与审计。
-5. 按客户端带宽动态调整订阅频率。
-6. 将浏览器 WorldView 迁移到真正的 Mindustry 桌面客户端。
+1. 完成 M1B-DesktopMultiView 检查点封存和安全测试。
+2. 将 PNG 多视口原型迁移到真正的 Mindustry World 场景与实体渲染。
+3. 增加多视口数量上限、布局切换和性能降级。
+4. 下一阶段再评估受控移动、建造和单位命令。
+5. 为动作确认加入能力协商、超时配置和高延迟重试策略。
+6. 将单进程登录限流迁移到多实例可共享的存储与审计。
 
 双世界手工实验记录见 `docs/bettermindustry/spikes/0001-two-worker-manual.md`。
 调试器说明见 `docs/bettermindustry/tools/debugger.md`。
