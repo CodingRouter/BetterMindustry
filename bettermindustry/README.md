@@ -7,6 +7,7 @@
 ```text
 bettermindustry/
   orchestrator/   控制层：世界清单、进程生命周期、路由与审计
+  desktop-client/ 桌面多 Sector 视口原型
   world-worker/   世界进程启动器：隔离配置、端口、存档和健康检查
   protocol/       共享协议模型：版本、能力协商、事件信封
   runtime/        本地开发运行目录，不提交存档和日志
@@ -22,6 +23,7 @@ bettermindustry/
 当前独立 Gradle 模块：
 
 - `orchestrator`：Worker 启停、Web 调试器、快照流。
+- `desktop-client`：Swing 桌面多视口、Gateway Session、Focus 与控制。
 - `protocol`：版本化 Render Frame。
 
 两者与 Mindustry 核心构建分离，避免控制层修改污染上游模块。

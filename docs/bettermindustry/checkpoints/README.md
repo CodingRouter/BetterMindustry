@@ -8,3 +8,4 @@
 | [M1B-AccountsRoles](0002-accounts-roles.md) | 已完成 | 账户、密码存储、角色授权、UI、跨重启验收和文档全部完成 |
 | [M1B-SessionSecurity](0003-session-security.md) | 已完成 | 登录限流、设备管理、管理员撤销、运行验收和文档全部完成 |
 | [M1B-AcknowledgedInput](0004-acknowledged-input.md) | 已完成 | Worker 执行确认、失败/超时回执、运行验收和安全测试完成 |
+| [M1B-DesktopMultiView](0005-desktop-multiview.md) | 已完成 | 独立桌面窗口、双 Sector 地图、Focus/控制、截图和桌面端到端验收完成 |

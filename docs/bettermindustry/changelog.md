@@ -57,6 +57,11 @@
 - Gateway 等到 Worker 确认后才将输入回执标记为 `APPLIED`，3 秒无确认则失败。
 - 输入回执持久化 Worker 确认 Tick 与 paused 状态，重复投递保留原执行现场。
 - ServerControl 限制确认动作仅能使用 `status/pause/resume/chat`。
+- 新增独立 Swing Desktop MultiView 客户端模块。
+- 桌面窗口通过认证 Gateway Session 并排显示两个真实 Sector 地图。
+- 桌面客户端支持 Focus、控制租约、pause/resume/release 和角色按钮状态。
+- 增加 `--screenshot` 自渲染验收模式，并修复 Java HttpClient 的 SameSite Cookie 持久化。
+- 调试器输入 Tick 窗口从 120 扩展到 6000，适配当前高速 headless Worker。
 
 ### Next
 
