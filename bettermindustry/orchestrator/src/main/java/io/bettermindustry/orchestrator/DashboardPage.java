@@ -403,7 +403,7 @@ public final class DashboardPage {
         commandId,
         sectorId,
         expectedTick,
-        deadlineTick: expectedTick + 120,
+        deadlineTick: expectedTick + 6000,
         type,
         message
       };

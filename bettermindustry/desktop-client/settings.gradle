@@ -1,0 +1,4 @@
+rootProject.name = 'bettermindustry-desktop-client'
+
+include 'protocol'
+project(':protocol').projectDir = file('../protocol')
